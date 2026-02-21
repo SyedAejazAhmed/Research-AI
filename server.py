@@ -62,6 +62,11 @@ SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+# Mount /assets so Vite-built bundles (e.g. /assets/index-xxx.js) are served correctly
+_assets_dir = STATIC_DIR / "assets"
+if _assets_dir.exists():
+    app.mount("/assets", StaticFiles(directory=str(_assets_dir)), name="assets")
+
 @app.get("/")
 async def read_root():
     """Serve the main index.html file."""
