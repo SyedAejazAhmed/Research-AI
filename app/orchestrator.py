@@ -60,7 +60,30 @@ class ResearchOrchestrator:
         
         # Session state
         self.sessions: Dict[str, Dict] = {}
+        self.sessions_dir = Path("sessions")
+        self.sessions_dir.mkdir(exist_ok=True)
+        self._load_sessions()
     
+    def _load_sessions(self):
+        """Load persistent sessions from disk."""
+        try:
+            for session_file in self.sessions_dir.glob("*.json"):
+                with open(session_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    self.sessions[session_file.stem] = data
+            logger.info(f"💾 Loaded {len(self.sessions)} sessions from disk.")
+        except Exception as e:
+            logger.error(f"Error loading sessions: {e}")
+
+    def _save_session(self, session_id: str):
+        """Save a single session to disk."""
+        if session_id in self.sessions:
+            try:
+                with open(self.sessions_dir / f"{session_id}.json", "w", encoding="utf-8") as f:
+                    json.dump(self.sessions[session_id], f, indent=2)
+            except Exception as e:
+                logger.error(f"Error saving session {session_id}: {e}")
+
     async def initialize(self):
         """Initialize the orchestrator and all agents."""
         logger.info("Initializing Yukti Research AI...")
@@ -228,6 +251,7 @@ class ResearchOrchestrator:
                 "completed_at": datetime.now().isoformat(),
                 "result": result
             })
+            self._save_session(session_id)
             
             if callback:
                 await callback("orchestrator", "completed", "Research complete! 🎉")

@@ -9,10 +9,10 @@ import sys
 import os
 from pathlib import Path
 
-def run_command(command):
+def run_command(command, cwd=None):
     print(f"Executing: {' '.join(command)}")
     try:
-        subprocess.check_call(command)
+        subprocess.check_call(command, cwd=cwd)
         return True
     except subprocess.CalledProcessError as e:
         print(f"Error executing command: {e}")
@@ -54,6 +54,20 @@ def main():
         asyncio.run(check_ollama())
     except ImportError:
         pass
+
+    # Build Frontend if needed
+    frontend_dir = Path("frontend")
+    if frontend_dir.exists():
+        print("🎨 Building advanced React frontend...")
+        frontend_dist = frontend_dir / "dist"
+        if not frontend_dist.exists() or "--rebuild" in sys.argv:
+            print("📦 Installing frontend dependencies...")
+            run_command(["cmd", "/c", "npm", "install"], cwd="frontend")
+            print("🏗️ Running build...")
+            run_command(["cmd", "/c", "npm", "run", "build"], cwd="frontend")
+            print("✅ Frontend built successfully.")
+        else:
+            print("✨ Using existing frontend build.")
 
     # Start server
     print("🌐 Starting server at http://localhost:8000")

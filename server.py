@@ -48,15 +48,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Static files
+# Static Files Configuration
 BASE_DIR = Path(__file__).resolve().parent
-STATIC_DIR = BASE_DIR / "app" / "static"
+FRONTEND_DIST = BASE_DIR / "frontend" / "dist"
+STATIC_DIR = FRONTEND_DIST if FRONTEND_DIST.exists() else BASE_DIR / "app" / "static"
+OUTPUT_DIR = BASE_DIR / "outputs"
+SESSIONS_DIR = BASE_DIR / "sessions"
+
+# Ensure directories exist
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+@app.get("/")
+async def read_root():
+    """Serve the main index.html file."""
+    index_path = STATIC_DIR / "index.html"
+    if index_path.exists():
+        return FileResponse(index_path)
+    return {"message": "Yukti Research AI API is running. Frontend build not found."}
+
 # Initialize orchestrator
-orchestrator = ResearchOrchestrator(output_dir=str(BASE_DIR / "outputs"))
+orchestrator = ResearchOrchestrator(output_dir=str(OUTPUT_DIR))
 
 # WebSocket connections
 active_connections: Dict[str, WebSocket] = {}
@@ -83,8 +98,51 @@ class ExportRequest(BaseModel):
 
 
 # ============================================================================
-# Startup
+# Models
 # ============================================================================
+
+class UserLogin(BaseModel):
+    email: str
+    password: str
+
+class UserRegister(BaseModel):
+    name: str
+    email: str
+    password: str
+
+# ... (rest of models)
+
+# ============================================================================
+# Auth Endpoints (Mock)
+# ============================================================================
+
+@app.post("/api/auth/login")
+async def login(user: UserLogin):
+    """Mock login."""
+    # In a real app, verify passwords
+    return {
+        "status": "success",
+        "user": {
+            "name": "Research Scholar",
+            "email": user.email,
+            "role": "academic"
+        },
+        "token": "mock-token-" + str(uuid.uuid4())
+    }
+
+@app.post("/api/auth/register")
+async def register(user: UserRegister):
+    """Mock register."""
+    return {
+        "status": "success",
+        "user": {
+            "name": user.name,
+            "email": user.email,
+            "role": "academic"
+        },
+        "token": "mock-token-" + str(uuid.uuid4())
+    }
+
 
 @app.on_event("startup")
 async def startup():
@@ -92,7 +150,6 @@ async def startup():
     logger.info("🚀 Starting Yukti Research AI Server...")
     status = await orchestrator.initialize()
     logger.info(f"✓ System initialized: {json.dumps(status, indent=2)}")
-
 
 # ============================================================================
 # REST API Endpoints
@@ -117,6 +174,21 @@ async def get_status():
         "active_sessions": len(orchestrator.sessions),
         "timestamp": datetime.now().isoformat()
     }
+
+
+@app.post("/api/system/setup")
+async def setup_system():
+    """Recommend and auto-setup Ollama model based on hardware."""
+    try:
+        # Perform auto-setup initialization
+        success = await orchestrator.llm_client.initialize(auto_setup=True)
+        return {
+            "success": success,
+            "status": orchestrator.llm_client.get_status(),
+            "message": "Optimization complete" if success else "Ollama not reachable"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/research")

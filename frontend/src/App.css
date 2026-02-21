@@ -1,0 +1,30 @@
+/* App specific overrides */
+.prose {
+  max-width: 100% !important;
+}
+
+.prose pre {
+  @apply bg-slate-900/50 border border-white/10 rounded-2xl;
+}
+
+.prose code {
+  @apply text-primary bg-primary/10 px-1 rounded;
+}
+
+/* Custom Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.1);
+}

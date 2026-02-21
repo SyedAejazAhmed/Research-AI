@@ -18,10 +18,8 @@ Yukti Research AI is a state-of-the-art autonomous research agent designed to de
 
 ## 🛠️ Tech Stack
 -   **Backend**: Python 3.11, FastAPI, WebSockets
--   **LLM Engine**: Ollama (Local LLM - Llama 3.2)
--   **Frontend**: Vanilla HTML5, CSS3 (Glassmorphism), JavaScript (ES6+)
--   **Data Sources**: ArXiv API, NCBI PubMed (eutils), Semantic Scholar API, DuckDuckGo
--   **Export Tools**: Markdown, Styled HTML, Native PDF, and IEEE LaTeX (IEEEtran)
+-   **LLM Engine**: Ollama (Local - Llama 3.2 / Qwen 2.5)
+-   **Frontend**: React 19, Tailwind CSS v4, Framer Motion
 -   **Team**: Dart Vadar - St. Joseph's College of Engineering
 
 ## 🏃 Getting Started
