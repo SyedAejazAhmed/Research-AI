@@ -11,7 +11,7 @@ import os
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -110,6 +110,29 @@ class WriteRequest(BaseModel):
     compile_pdf: bool = True
     template: str = "article"   # article | ieee | acm
     author: str = "Yukti Research AI"
+
+
+class PartialWriteRequest(BaseModel):
+    """Write a partial paper from directly-supplied sections (no session required)."""
+    title: str
+    abstract: str = ""
+    sections: List[Dict[str, str]]   # [{"title": ..., "content": ...}, ...]
+    citations: Dict[str, Any] = {}
+    compile_pdf: bool = True
+    template: str = "article"
+    author: str = "Yukti Research AI"
+    session_id: str = ""            # optional, used only for output filename
+
+
+class SectionRefineRequest(BaseModel):
+    """Refine a single paper section via the LLM based on a user chat message."""
+    section_key: str
+    section_title: str
+    current_content: str
+    user_message: str
+    paper_title: str = "Research Paper"
+    context_summary: str = ""   # optional: brief abstract/keywords for context
+    session_id: str = ""
 
 
 # ============================================================================
@@ -336,6 +359,48 @@ async def write_report(req: WriteRequest):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@app.post("/api/write/partial")
+async def write_partial_report(req: PartialWriteRequest):
+    """
+    Generate a LaTeX document (and optionally PDF) from directly-supplied sections.
+    Does NOT require a prior research session — useful for progressive section review.
+    """
+    import uuid as _uuid
+    sid = req.session_id.strip() or _uuid.uuid4().hex[:8]
+
+    research_result = {
+        "title":    req.title,
+        "abstract": req.abstract,
+        "sections": req.sections,
+        "citations": req.citations,
+        "report":   "",
+    }
+
+    try:
+        write_result = await writing_service.write(
+            research_result=research_result,
+            session_id=f"{sid}_partial",
+            compile_pdf=req.compile_pdf,
+            template=req.template,
+            author=req.author,
+        )
+        partial_sid = f"{sid}_partial"
+        return {
+            "status": "success",
+            "session_id": partial_sid,
+            "tex_path": write_result["tex_path"],
+            "pdf_path": write_result.get("pdf_path"),
+            "pdf_success": write_result["pdf_success"],
+            "compile_errors": write_result["compile_errors"],
+            "compile_warnings": write_result["compile_warnings"],
+            "download_tex": f"/api/export/{partial_sid}/latex",
+            "download_pdf": f"/api/export/{partial_sid}/pdf" if write_result["pdf_success"] else None,
+        }
+    except Exception as exc:
+        logger.error(f"Partial write error: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @app.post("/api/write/raw")
 async def write_raw_report(request: ResearchRequest):
     """
@@ -363,6 +428,115 @@ async def write_raw_report(request: ResearchRequest):
     except Exception as exc:
         logger.error(f"Write-raw error: {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ============================================================================
+# Section Refine Endpoint
+# ============================================================================
+
+@app.post("/api/section/refine")
+async def section_refine(req: SectionRefineRequest):
+    """
+    Refine a single academic paper section via Ollama.
+
+    The user's chat message is used as an instruction; the LLM rewrites the
+    section and returns the improved content.
+    """
+    # IEEE word-count targets per section
+    word_targets = {
+        "abstract":         "150–250",
+        "introduction":     "400–600",
+        "related_studies":  "600–900",
+        "methodology":      "500–800",
+        "result_discussion": "800–1200",
+        "conclusion":       "200–350",
+    }
+    target = word_targets.get(req.section_key, "400–700")
+
+    context_block = (
+        f"\nPaper context/abstract:\n{req.context_summary}\n"
+        if req.context_summary.strip() else ""
+    )
+
+    prompt = (
+        f"You are an expert academic writer helping prepare an IEEE-format research paper.\n"
+        f"Paper title: {req.paper_title}\n"
+        f"Section: {req.section_title} (target word count: {target} words){context_block}\n"
+        f"--- Current section content ---\n{req.current_content}\n"
+        f"--- End of current content ---\n\n"
+        f"User instruction: {req.user_message}\n\n"
+        f"Rewrite the {req.section_title} section following the user's instruction. "
+        f"Keep a formal academic tone suitable for IEEE publication. "
+        f"Return ONLY the revised section text with no extra preamble or labels."
+    )
+
+    try:
+        client = OllamaClient()
+        refined = await client.generate(prompt, max_tokens=2048)
+        return {
+            "status": "success",
+            "section_key": req.section_key,
+            "content": refined.strip(),
+        }
+    except Exception as exc:
+        logger.error(f"Section refine error: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ============================================================================
+# GitHub Intelligence Endpoints
+# ============================================================================
+
+class GithubAnalyzeRequest(BaseModel):
+    repo_url: str
+    existing_title: Optional[str] = None
+    output_dir: str = "./output/GitHub"
+    github_token: Optional[str] = None   # optional PAT for higher rate limits
+
+
+@app.post("/api/github/analyze")
+async def github_analyze(req: GithubAnalyzeRequest):
+    """
+    Scrape a public GitHub repository's concepts and synthesise with local LLM.
+    No git clone — uses GitHub REST API + raw content. Target: <60 s.
+    """
+    import asyncio as _asyncio
+    try:
+        from multi_agents.agents.github_agent import GithubAgent, GithubAgentConfig
+        cfg = GithubAgentConfig(
+            repo_url=req.repo_url,
+            existing_title=req.existing_title,
+            output_dir=req.output_dir,
+            ollama_base_url="http://localhost:11434",
+            ollama_model="gpt-oss:20b",
+            github_token=req.github_token,
+        )
+        agent = GithubAgent(config=cfg)
+        try:
+            response = await _asyncio.wait_for(agent.run(), timeout=200.0)
+        except _asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=504,
+                detail="GitHub analysis timed out (200 s). The LLM may be busy — please try again.",
+            )
+        if response.success:
+            return {
+                "status": "success",
+                "data": response.data,
+                "elapsed_seconds": response.execution_time,
+            }
+        raise HTTPException(status_code=500, detail=response.error or "Analysis failed")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("GitHub analyze error: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/github/analyze/{job_id}")
+async def github_status(job_id: str):
+    """Placeholder for future async job status tracking."""
+    return {"status": "not_implemented", "message": "Use POST /api/github/analyze (synchronous)"}
 
 
 @app.get("/api/export/{session_id}/{format}")
@@ -443,16 +617,23 @@ async def websocket_research(websocket: WebSocket):
                     "query": query
                 })
                 
-                # Define progress callback
-                async def progress_callback(agent: str, status: str, message: str):
+                # Define progress callback (supports optional 4th `data` arg for section_ready)
+                async def progress_callback(agent: str, status: str, message: str, data=None):
                     try:
-                        await websocket.send_json({
-                            "type": "progress",
-                            "agent": agent,
-                            "status": status,
-                            "message": message,
-                            "timestamp": datetime.now().isoformat()
-                        })
+                        if status == "section_ready" and data:
+                            await websocket.send_json({
+                                "type": "section_ready",
+                                "section": data,
+                                "timestamp": datetime.now().isoformat()
+                            })
+                        else:
+                            await websocket.send_json({
+                                "type": "progress",
+                                "agent": agent,
+                                "status": status,
+                                "message": message,
+                                "timestamp": datetime.now().isoformat()
+                            })
                     except Exception:
                         pass  # Connection may have closed
                 
@@ -465,17 +646,23 @@ async def websocket_research(websocket: WebSocket):
                         citation_style=citation_style
                     )
                     
-                    # Send final result
-                    await websocket.send_json({
-                        "type": "result",
-                        "data": result
-                    })
+                    # Send final result — guard against WS closing during research
+                    try:
+                        await websocket.send_json({
+                            "type": "result",
+                            "data": result
+                        })
+                    except (RuntimeError, Exception):
+                        pass  # Client disconnected before result arrived
                     
                 except Exception as e:
-                    await websocket.send_json({
-                        "type": "error",
-                        "message": str(e)
-                    })
+                    try:
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": str(e) or repr(e)
+                        })
+                    except (RuntimeError, Exception):
+                        pass  # Client disconnected
             
             elif action == "chat":
                 message = request.get("message", "")

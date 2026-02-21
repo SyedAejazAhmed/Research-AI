@@ -79,7 +79,7 @@ Return JSON with this exact structure:
     "expected_sources": ["ArXiv", "PubMed", "Semantic Scholar", "Web"]
 }}
 """
-                response = await self.llm_client.generate(prompt)
+                response = await self.llm_client.generate(prompt, max_tokens=1024)
                 
                 # Try to parse JSON from response
                 json_str = response

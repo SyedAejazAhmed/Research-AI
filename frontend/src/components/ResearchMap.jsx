@@ -1,139 +1,159 @@
-import React from 'react';
-import { motion } from 'framer-motion';
+import React, { useRef, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 
-const ResearchMap = ({ agents }) => {
-    const nodes = [
-        { id: 'planner', x: 0, y: -140, label: 'Orchestrator' },
-        { id: 'web_agent', x: -120, y: -40, label: 'Web Cluster' },
-        { id: 'academic_agent', x: 120, y: -40, label: 'Academic Nodes' },
-        { id: 'aggregator', x: 0, y: 40, label: 'Data Fusion' },
-        { id: 'synthesizer', x: 0, y: 140, label: 'Neural Synthesis' },
-        { id: 'publisher', x: 140, y: 140, label: 'Publication' }
-    ];
+/**
+ * Vertical step-by-step pipeline that shows exactly what each backend agent
+ * is doing in real time. Replaces the old icon-bubble diagram.
+ */
 
-    const getStatusColor = (status) => {
-        switch (status) {
-            case 'completed': return '#10b981';
-            case 'active': return '#6366f1';
-            case 'error': return '#ef4444';
-            default: return 'rgba(255,255,255,0.05)';
-        }
-    };
+const PIPELINE_STEPS = [
+    { id: 'orchestrator', label: 'Orchestrator', desc: 'Coordinates all agents' },
+    { id: 'planner', label: 'Planner Agent', desc: 'Breaks query into sub-questions & plan' },
+    { id: 'web_agent', label: 'Web Context Agent', desc: 'Searches DuckDuckGo for context' },
+    { id: 'academic_agent', label: 'Academic Research', desc: 'ArXiv, PubMed, Semantic Scholar' },
+    { id: 'doc_agent', label: 'Document Processor', desc: 'Ranks & filters sources' },
+    { id: 'citation_agent', label: 'Citation Agent', desc: 'Validates DOIs, formats citations' },
+    { id: 'aggregator', label: 'Content Aggregator', desc: 'Unifies dataset for synthesis' },
+    { id: 'synthesizer', label: 'AI Synthesizer', desc: 'Local LLM report generation' },
+    { id: 'publisher', label: 'Publisher', desc: 'Generates MD / HTML / PDF / LaTeX' },
+];
 
-    const getStatusShadow = (status) => {
-        switch (status) {
-            case 'completed': return '0 0 40px rgba(16, 185, 129, 0.4)';
-            case 'active': return '0 0 40px rgba(99, 102, 241, 0.6)';
-            default: return 'none';
-        }
-    };
+const statusMeta = {
+    pending:    { color: 'border-white/10 bg-white/[0.02]', dot: 'bg-slate-700', text: 'text-slate-600', badge: 'WAITING' },
+    analyzing:  { color: 'border-amber-500/40 bg-amber-500/5', dot: 'bg-amber-400 animate-pulse', text: 'text-amber-300', badge: 'RUNNING' },
+    active:     { color: 'border-primary/40 bg-primary/5', dot: 'bg-primary animate-pulse', text: 'text-primary', badge: 'RUNNING' },
+    starting:   { color: 'border-blue-500/40 bg-blue-500/5', dot: 'bg-blue-400 animate-pulse', text: 'text-blue-300', badge: 'STARTING' },
+    generating: { color: 'border-purple-500/40 bg-purple-500/5', dot: 'bg-purple-400 animate-pulse', text: 'text-purple-300', badge: 'GENERATING' },
+    compiling:  { color: 'border-cyan-500/40 bg-cyan-500/5', dot: 'bg-cyan-400 animate-pulse', text: 'text-cyan-300', badge: 'COMPILING' },
+    step:       { color: 'border-primary/40 bg-primary/5', dot: 'bg-primary animate-pulse', text: 'text-primary', badge: 'ACTIVE' },
+    completed:  { color: 'border-emerald-500/30 bg-emerald-500/5', dot: 'bg-emerald-400', text: 'text-emerald-400', badge: 'DONE' },
+    error:      { color: 'border-red-500/30 bg-red-500/5', dot: 'bg-red-400', text: 'text-red-400', badge: 'ERROR' },
+};
+
+const getMeta = (s) => statusMeta[s] || statusMeta.pending;
+
+const ResearchMap = ({ agents, logs = [] }) => {
+    const bottomRef = useRef(null);
+    useEffect(() => {
+        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [logs]);
+
+    // Group logs by agent
+    const logsByAgent = {};
+    logs.forEach(l => {
+        if (!logsByAgent[l.agent]) logsByAgent[l.agent] = [];
+        logsByAgent[l.agent].push(l);
+    });
 
     return (
-        <div className="relative w-full h-full flex items-center justify-center overflow-visible">
-            <svg width="100%" height="100%" viewBox="-250 -250 500 500" className="absolute" style={{ pointerEvents: 'none' }}>
-                <defs>
-                    <linearGradient id="line-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.2" />
-                        <stop offset="100%" stopColor="var(--secondary)" stopOpacity="0.2" />
-                    </linearGradient>
-                    <filter id="glow">
-                        <feGaussianBlur stdDeviation="3" result="coloredBlur" />
-                        <feMerge>
-                            <feMergeNode in="coloredBlur" /><feMergeNode in="SourceGraphic" />
-                        </feMerge>
-                    </filter>
-                </defs>
+        <div className="w-full flex flex-col gap-1 relative">
+            {/* Vertical connector line */}
+            <div className="absolute left-[19px] top-8 bottom-8 w-[2px] bg-gradient-to-b from-primary/20 via-white/5 to-emerald-500/20 z-0" />
 
-                {/* Connection Paths */}
-                <motion.path
-                    d="M 0 -140 L -120 -40 L 0 40 L 0 140"
-                    fill="none"
-                    stroke="url(#line-grad)"
-                    strokeWidth="3"
-                    strokeDasharray="10, 10"
-                    initial={{ pathLength: 0 }}
-                    animate={{ pathLength: 1 }}
-                    transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                />
-                <motion.path
-                    d="M 0 -140 L 120 -40 L 0 40"
-                    fill="none"
-                    stroke="url(#line-grad)"
-                    strokeWidth="3"
-                    strokeDasharray="10, 10"
-                    initial={{ pathLength: 0 }}
-                    animate={{ pathLength: 1 }}
-                    transition={{ duration: 2, repeat: Infinity, ease: "linear", delay: 1 }}
-                />
-                <motion.line
-                    x1="0" y1="140" x2="140" y2="140"
-                    stroke="url(#line-grad)"
-                    strokeWidth="3"
-                    strokeDasharray="10, 10"
-                />
-            </svg>
-
-            {nodes.map((node, i) => {
-                const agent = agents[node.id] || { status: 'pending' };
-                const isActive = agent.status === 'active';
-                const isCompleted = agent.status === 'completed';
+            {PIPELINE_STEPS.map((step, i) => {
+                const agent = agents[step.id] || { status: 'pending', message: '' };
+                const meta = getMeta(agent.status);
+                const agentLogs = logsByAgent[step.id] || [];
+                const isIdle = agent.status === 'pending';
+                const isDone = agent.status === 'completed';
 
                 return (
                     <motion.div
-                        key={node.id}
-                        className={`absolute flex flex-col items-center justify-center transition-all duration-700`}
-                        style={{
-                            left: `calc(50% + ${node.x}px)`,
-                            top: `calc(50% + ${node.y}px)`,
-                            transform: 'translate(-50%, -50%)',
-                        }}
+                        key={step.id}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: i * 0.04 }}
+                        className="relative z-10"
                     >
-                        <motion.div
-                            className={`w-20 h-20 rounded-3xl backdrop-blur-3xl flex items-center justify-center text-2xl border-2 z-10`}
-                            style={{
-                                backgroundColor: isCompleted ? 'rgba(16, 185, 129, 0.2)' : isActive ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255,255,255,0.03)',
-                                borderColor: getStatusColor(agent.status),
-                                boxShadow: getStatusShadow(agent.status),
-                            }}
-                            initial={{ scale: 0, opacity: 0, rotate: -45 }}
-                            animate={{ scale: 1, opacity: 1, rotate: 0 }}
-                            transition={{ delay: i * 0.1, type: 'spring', damping: 12 }}
-                            whileHover={{ scale: 1.15, rotate: 5 }}
-                        >
-                            {isCompleted ? (
-                                <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} className="text-success text-3xl font-bold">✓</motion.span>
-                            ) : (
-                                <span className={isActive ? 'animate-pulse text-primary' : 'text-slate-600'}>
-                                    {agents[node.id]?.icon || '01'}
-                                </span>
-                            )}
+                        {/* Step row */}
+                        <div className={`flex items-start gap-4 px-3 py-3 rounded-2xl border transition-all duration-500 ${meta.color}`}>
+                            {/* Status dot + index */}
+                            <div className="flex flex-col items-center gap-1 pt-0.5">
+                                <div className={`w-[10px] h-[10px] rounded-full shrink-0 ${meta.dot}`} />
+                                <span className="text-[8px] font-mono text-slate-600">{String(i + 1).padStart(2, '0')}</span>
+                            </div>
 
-                            {isActive && (
-                                <motion.div
-                                    className="absolute inset-0 rounded-3xl border-2 border-primary"
-                                    animate={{ scale: [1, 1.3, 1], opacity: [1, 0, 1] }}
-                                    transition={{ duration: 2, repeat: Infinity }}
-                                />
-                            )}
-                        </motion.div>
+                            {/* Content */}
+                            <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-3 mb-0.5">
+                                    <span className={`text-xs font-black uppercase tracking-widest ${isIdle ? 'text-slate-600' : meta.text}`}>
+                                        {step.label}
+                                    </span>
+                                    {!isIdle && (
+                                        <span className={`text-[8px] font-black tracking-widest px-2 py-0.5 rounded-full ${
+                                            isDone ? 'bg-emerald-500/20 text-emerald-400'
+                                                : agent.status === 'error' ? 'bg-red-500/20 text-red-400'
+                                                : 'bg-primary/20 text-primary'
+                                        }`}>
+                                            {meta.badge}
+                                        </span>
+                                    )}
+                                </div>
 
-                        <motion.div
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            className="mt-4 text-center"
-                        >
-                            <p className={`text-[10px] font-black uppercase tracking-[0.2em] ${isActive ? 'text-primary' : 'text-slate-500'}`}>
-                                {node.label}
-                            </p>
-                            {agent.message && (isActive || isCompleted) && (
-                                <p className="text-[8px] text-slate-400 mt-1 max-w-[100px] leading-tight truncate">
-                                    {agent.message}
+                                {/* Description / current message */}
+                                <p className="text-[10px] text-slate-500 leading-relaxed">
+                                    {agent.message
+                                        ? (agent.message.split('. Plan:')[0])
+                                        : step.desc}
                                 </p>
-                            )}
-                        </motion.div>
+
+                                {/* Sub-log entries (collapsed to last 4) */}
+                                <AnimatePresence>
+                                    {agentLogs.length > 0 && !isIdle && (
+                                        <motion.div
+                                            initial={{ height: 0, opacity: 0 }}
+                                            animate={{ height: 'auto', opacity: 1 }}
+                                            exit={{ height: 0, opacity: 0 }}
+                                            className="mt-2 space-y-0.5 overflow-hidden"
+                                        >
+                                            {agentLogs.slice(-4).map((entry, j) => {
+                                                const time = entry.timestamp
+                                                    ? new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                                                    : '';
+                                                const displayMsg = (entry.message || '').split('. Plan:')[0];
+                                                return (
+                                                    <motion.div
+                                                        key={j}
+                                                        initial={{ opacity: 0, y: 4 }}
+                                                        animate={{ opacity: 1, y: 0 }}
+                                                        className="flex items-center gap-2 font-mono text-[9px] text-slate-500"
+                                                    >
+                                                        <span className="text-slate-700 w-14 shrink-0">{time}</span>
+                                                        <span className="truncate">{displayMsg}</span>
+                                                    </motion.div>
+                                                );
+                                            })}
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                            </div>
+
+                            {/* Completion / spinner indicator */}
+                            <div className="shrink-0 pt-0.5">
+                                {isDone && (
+                                    <motion.div
+                                        initial={{ scale: 0 }}
+                                        animate={{ scale: 1 }}
+                                        className="w-7 h-7 rounded-lg bg-emerald-500/20 flex items-center justify-center"
+                                    >
+                                        <span className="text-emerald-400 text-sm font-bold">✓</span>
+                                    </motion.div>
+                                )}
+                                {(!isIdle && !isDone && agent.status !== 'error') && (
+                                    <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
+                                        <motion.div
+                                            className="w-3 h-3 rounded-full border-2 border-primary border-t-transparent"
+                                            animate={{ rotate: 360 }}
+                                            transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                        </div>
                     </motion.div>
                 );
             })}
+            <div ref={bottomRef} />
         </div>
     );
 };

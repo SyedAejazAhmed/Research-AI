@@ -1,236 +1,319 @@
 """
 Yukti Research AI - Synthesizer Agent
 =======================================
-Uses Local LLM (Ollama) for chunk-based processing,
-citation-aware generation, and source grounding.
+Uses Local LLM (Ollama) to produce an academic paper with fixed structure:
+
+  Title → Abstract → Introduction → Related Studies →
+  Methodology → Result and Discussion → Conclusion → References
+
+Features:
+- Fixed 7-section academic format (not planner-driven)
+- Each section fires a ``section_ready`` callback for frontend review
+- Parallel LLM generation (abstract + 5 body sections simultaneously)
+- Citation-aware generation
+- Source grounding to prevent hallucination
 """
 
 import logging
 import asyncio
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Callable
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+# Fixed academic sections (excluding Abstract and References — handled separately)
+ACADEMIC_SECTIONS = [
+    {
+        "key": "introduction",
+        "title": "Introduction",
+        "focus": "background, problem statement, motivation, and research objectives",
+        "instructions": (
+            "Write the Introduction covering: (1) background and context of the topic, "
+            "(2) the problem being addressed, (3) motivation for the research, "
+            "(4) research objectives. Cite relevant sources."
+        ),
+    },
+    {
+        "key": "related_studies",
+        "title": "Related Studies",
+        "focus": "existing literature, prior work, and comparative analysis",
+        "instructions": (
+            "Review and synthesise related work. Discuss prior approaches, "
+            "existing methodologies, and their limitations. Group by theme or approach. "
+            "Use numbered citations."
+        ),
+    },
+    {
+        "key": "methodology",
+        "title": "Methodology",
+        "focus": "approach, methods, datasets, models, and experimental setup",
+        "instructions": (
+            "Describe the methodology: data sources, research approach, any models "
+            "or algorithms referenced, and the analytical framework. Be precise and structured."
+        ),
+    },
+    {
+        "key": "result_discussion",
+        "title": "Result and Discussion",
+        "focus": "findings, analysis, comparisons, and interpretation",
+        "instructions": (
+            "Present and discuss the findings from the research. Highlight key "
+            "results, compare with related work, and interpret their significance. "
+            "Reference supporting sources."
+        ),
+    },
+    {
+        "key": "conclusion",
+        "title": "Conclusion",
+        "focus": "summary, contributions, limitations, and future directions",
+        "instructions": (
+            "Summarise the main findings and contributions. State limitations of the "
+            "current study and suggest future research directions. Keep to 150–250 words."
+        ),
+    },
+]
+
 
 class SynthesizerAgent:
     """
-    LLM Processing Layer: Synthesizes research into a structured report.
-    
-    Features:
-    - Chunk-based processing for large content
-    - Citation-aware generation
-    - Source grounding to prevent hallucination
-    - Academic tone and structure
+    LLM Synthesis Layer: produces a structured academic paper from aggregated data.
+
+    Fixed academic sections: Abstract, Introduction, Related Studies,
+    Methodology, Result and Discussion, Conclusion, References.
+
+    Each completed section fires a ``section_ready`` callback so the frontend
+    can display sections one-by-one for review.
     """
-    
+
     def __init__(self, llm_client=None):
         self.llm_client = llm_client
         self.name = "Synthesizer Agent"
-    
-    async def synthesize(self, aggregated_data: Dict[str, Any], callback=None) -> Dict[str, Any]:
+
+    # -----------------------------------------------------------------------
+    # Public entry point
+    # -----------------------------------------------------------------------
+
+    async def synthesize(
+        self,
+        aggregated_data: Dict[str, Any],
+        callback: Optional[Callable] = None,
+    ) -> Dict[str, Any]:
         """
-        Synthesize a research report from aggregated data.
+        Synthesize a full academic research paper from aggregated data.
+
+        Extended callback signature (4th param is optional)::
+
+            await callback(agent, status, message, data=None)
+
+        Special statuses emitted:
+          - ``"section_ready"``  — once per section; ``data`` = section dict
+          - ``"completed"``      — when all sections are assembled
         """
         if callback:
-            await callback("synthesizer", "starting", "Starting report synthesis...")
-        
+            await callback("synthesizer", "starting", "Starting academic paper synthesis …")
+
         plan = aggregated_data.get("plan", {})
+        all_content = aggregated_data.get("all_content", [])
         sections_context = aggregated_data.get("sections_context", [])
         citations_text = aggregated_data.get("citations_text", "")
-        
-        report_sections = []
-        
-        # Generate title
+
         title = plan.get("title", "Research Report")
-        
-        # Generate abstract
+        keywords = plan.get("keywords", [])
+
+        unified_context = self._build_unified_context(all_content, sections_context)
+
         if callback:
-            await callback("synthesizer", "generating", "Generating abstract...")
-        abstract = await self._generate_abstract(plan, aggregated_data)
-        
-        # Generate each section
-        total_sections = len(sections_context)
-        for i, section_ctx in enumerate(sections_context):
-            section_title = section_ctx.get("title", f"Section {i+1}")
-            
+            await callback(
+                "synthesizer", "generating",
+                f"Generating Abstract + {len(ACADEMIC_SECTIONS)} sections in parallel …"
+            )
+
+        # ── Parallel generation ─────────────────────────────────────────────
+        async def _gen_with_callback(idx: int, section_def: Dict) -> Dict:
+            content = await self._generate_section(section_def, plan, unified_context)
+            section = {
+                "index": idx,
+                "key": section_def["key"],
+                "title": section_def["title"],
+                "content": content,
+            }
             if callback:
-                progress = int(((i + 1) / total_sections) * 100)
-                await callback("synthesizer", "generating", f"Writing section {i+1}/{total_sections}: {section_title} ({progress}%)")
-            
-            section_content = await self._generate_section(section_ctx, plan, aggregated_data)
-            
-            report_sections.append({
-                "title": section_title,
-                "content": section_content,
-                "sources_used": len(section_ctx.get("relevant_content", []))
-            })
-        
-        # Compile full report
+                await self._safe_callback(callback, "synthesizer", "section_ready",
+                                          f"Section ready: {section_def['title']}", section)
+            return section
+
+        tasks = [self._generate_abstract(plan, aggregated_data)] + [
+            _gen_with_callback(i, sec) for i, sec in enumerate(ACADEMIC_SECTIONS)
+        ]
+        results = await asyncio.gather(*tasks)
+
+        abstract: str = results[0]
+        body_sections: List[Dict] = list(results[1:])
+
+        # Send abstract as a section_ready event too
+        abstract_section = {"index": -1, "key": "abstract", "title": "Abstract", "content": abstract}
         if callback:
-            await callback("synthesizer", "compiling", "Compiling final report...")
-        
-        full_report = self._compile_report(title, abstract, report_sections, citations_text, plan)
-        
+            await self._safe_callback(callback, "synthesizer", "section_ready",
+                                      "Section ready: Abstract", abstract_section)
+
+        if callback:
+            await callback("synthesizer", "compiling", "Compiling full report …")
+
+        full_report = self._compile_report(title, abstract, body_sections, citations_text, keywords)
+
         if callback:
             await callback("synthesizer", "completed", "Report synthesis complete!")
-        
+
         return {
             "agent": self.name,
             "title": title,
             "abstract": abstract,
-            "sections": report_sections,
+            "sections": body_sections,
             "full_report": full_report,
             "citations": citations_text,
+            "keywords": keywords,
             "word_count": len(full_report.split()),
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
-    
+
+    # -----------------------------------------------------------------------
+    # Abstract
+    # -----------------------------------------------------------------------
+
     async def _generate_abstract(self, plan: Dict, data: Dict) -> str:
-        """Generate report abstract."""
         if self.llm_client and self.llm_client.is_available:
-            prompt = f"""Write a concise academic abstract (150-250 words) for a research report on:
+            prompt = f"""Write a concise academic abstract (150–250 words) for a research paper on:
 
 Title: {plan.get('title', '')}
-Scope: {plan.get('abstract_scope', '')}
 Key Topics: {', '.join(plan.get('keywords', []))}
-Total Sources Found: {data.get('total_sources', 0)}
+Total Sources: {data.get('total_sources', 0)}
 Academic Sources: {data.get('academic_sources', 0)}
 
-The abstract should:
-1. State the research objective
-2. Briefly describe the methodology
-3. Summarize key findings
-4. Note the significance
+State the objective, methodology, key findings, and significance.
+Academic third-person tone. Do NOT include headers or labels."""
+            return await self.llm_client.generate(prompt, max_tokens=400)
 
-Write in academic third-person tone. Do NOT include any headers or labels."""
-            
-            return await self.llm_client.generate(prompt)
-        
-        # Fallback abstract
         return (
-            f"This report presents a comprehensive analysis of {plan.get('title', 'the research topic')}. "
-            f"Through systematic research across multiple academic databases including ArXiv, PubMed, "
-            f"and Semantic Scholar, {data.get('total_sources', 0)} sources were identified and analyzed. "
-            f"Of these, {data.get('academic_sources', 0)} are verified academic sources with DOI references. "
-            f"The report covers {plan.get('abstract_scope', 'key aspects of the topic')}, "
-            f"examining current methodologies, recent advancements, challenges, and future directions. "
-            f"Key findings are synthesized from peer-reviewed literature to provide an evidence-based overview."
+            f"This paper presents a comprehensive analysis of {plan.get('title', 'the research topic')}. "
+            f"Systematic research across multiple academic databases identified "
+            f"{data.get('total_sources', 0)} sources, of which "
+            f"{data.get('academic_sources', 0)} are verified peer-reviewed publications. "
+            f"The study examines current methodologies, recent advancements, challenges, and future directions."
         )
-    
-    async def _generate_section(self, section_ctx: Dict, plan: Dict, data: Dict) -> str:
-        """Generate a single report section."""
-        relevant_content = section_ctx.get("relevant_content", [])
-        
+
+    # -----------------------------------------------------------------------
+    # Body section
+    # -----------------------------------------------------------------------
+
+    async def _generate_section(
+        self, section_def: Dict, plan: Dict, unified_context: str
+    ) -> str:
         if self.llm_client and self.llm_client.is_available:
-            # Build context from relevant sources
-            source_context = ""
-            for i, item in enumerate(relevant_content[:8]):
-                source_context += f"\n--- Source {i+1} ---\n"
-                source_context += f"Title: {item.get('title', 'N/A')}\n"
-                source_context += f"Content: {item.get('content', 'N/A')[:500]}\n"
-                source_context += f"Source: {item.get('source', 'N/A')}\n"
-                if item.get('doi'):
-                    source_context += f"DOI: {item['doi']}\n"
-            
-            prompt = f"""Write the "{section_ctx.get('title', '')}" section for a research report on:
+            prompt = f"""Write the "{section_def['title']}" section for an academic research paper.
 
 Research Topic: {plan.get('title', '')}
-Section Focus: {section_ctx.get('research_focus', '')}
-Section Description: {section_ctx.get('description', '')}
+Section Focus: {section_def['focus']}
+
+{section_def['instructions']}
 
 Available Source Material:
-{source_context if source_context else 'No specific sources available for this section.'}
+{unified_context[:3000] if unified_context else 'No specific sources available.'}
 
-Instructions:
-1. Write 200-400 words in academic prose
-2. Reference sources using [number] format where applicable
-3. Maintain an objective, scholarly tone
-4. Include specific facts and findings from the sources
-5. Do NOT include the section title (it will be added separately)
-6. Do NOT make up citations - only reference provided sources
-7. Focus on evidence-based analysis"""
-            
-            return await self.llm_client.generate(prompt)
-        
-        # Fallback: compile from sources
-        return self._compile_section_from_sources(section_ctx)
-    
-    def _compile_section_from_sources(self, section_ctx: Dict) -> str:
-        """Compile a section directly from source material when LLM is unavailable."""
-        relevant = section_ctx.get("relevant_content", [])
-        
-        if not relevant:
-            return (
-                f"This section covers {section_ctx.get('description', 'the topic')}. "
-                f"Further research is needed to provide comprehensive coverage of "
-                f"{section_ctx.get('research_focus', 'this area')}."
-            )
-        
-        paragraphs = []
-        paragraphs.append(
-            f"Research in {section_ctx.get('research_focus', 'this area')} "
-            f"reveals several important findings from {len(relevant)} relevant sources."
+Rules:
+1. Write 250–450 words in academic prose
+2. Use [number] citation format where applicable
+3. Objective, scholarly tone — no first-person
+4. Do NOT include the section title (added separately)
+5. Only reference provided sources — never fabricate citations"""
+            return await self.llm_client.generate(prompt, max_tokens=600)
+
+        return (
+            f"This section covers {section_def['focus']}. "
+            f"Based on analysis of available literature, key findings are presented "
+            f"following a systematic review of {section_def['title'].lower()} aspects. "
+            f"Further investigation is recommended to provide comprehensive coverage."
         )
-        
-        for i, item in enumerate(relevant[:5]):
-            authors = item.get("authors", [])
-            author_str = f" by {authors[0]} et al." if authors else ""
-            year = f" ({item.get('year', '')})" if item.get('year') else ""
-            content = item.get("content", "") or item.get("abstract", "")
-            
-            if content:
-                # Take first 2 sentences
-                sentences = content.split('. ')[:2]
-                summary = '. '.join(sentences)
-                if not summary.endswith('.'):
-                    summary += '.'
-                
-                paragraphs.append(
-                    f"A study{author_str}{year} titled \"{item.get('title', 'Untitled')}\" "
-                    f"from {item.get('source', 'academic sources')} found that {summary} [{i+1}]"
-                )
-        
-        return "\n\n".join(paragraphs)
-    
+
+    # -----------------------------------------------------------------------
+    # Helpers
+    # -----------------------------------------------------------------------
+
+    @staticmethod
+    def _build_unified_context(all_content: List[Dict], sections_context: List[Dict]) -> str:
+        """Combine and deduplicate all available research content into one context string."""
+        items = list(all_content)
+        for sc in sections_context:
+            items.extend(sc.get("relevant_content", []))
+
+        seen, deduped = set(), []
+        for item in items:
+            key = item.get("title", "") or (item.get("content", "") or "")[:50]
+            if key and key not in seen:
+                seen.add(key)
+                deduped.append(item)
+
+        lines = []
+        for i, item in enumerate(deduped[:15], start=1):
+            snippet = (item.get("content") or item.get("abstract") or "")[:400]
+            doi_part = f", DOI: {item['doi']}" if item.get("doi") else ""
+            lines.append(
+                f"[{i}] {item.get('title', 'Untitled')} "
+                f"({item.get('source', 'Unknown')}{doi_part})\n{snippet}"
+            )
+        return "\n\n".join(lines)
+
+    @staticmethod
+    async def _safe_callback(callback, agent, status, message, data=None):
+        """Call callback with optional 4th arg, catching any errors."""
+        try:
+            await callback(agent, status, message, data)
+        except TypeError:
+            # Fallback: old 3-arg callback signature
+            try:
+                await callback(agent, status, message)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
     def _compile_report(
         self,
         title: str,
         abstract: str,
         sections: List[Dict],
         citations: str,
-        plan: Dict
+        keywords: List[str],
     ) -> str:
-        """Compile all sections into a complete report."""
-        report = f"# {title}\n\n"
-        report += f"*Generated by Yukti Research AI on {datetime.now().strftime('%B %d, %Y')}*\n\n"
-        report += "---\n\n"
-        
-        # Abstract
-        report += "## Abstract\n\n"
-        report += abstract + "\n\n"
-        
-        # Keywords
-        keywords = plan.get("keywords", [])
+        lines = [
+            f"# {title}",
+            "",
+            f"*Generated by Yukti Research AI on {datetime.now().strftime('%B %d, %Y')}*",
+            "",
+            "---",
+            "",
+            "## Abstract",
+            "",
+            abstract,
+            "",
+        ]
         if keywords:
-            report += f"**Keywords:** {', '.join(keywords)}\n\n"
-        
-        report += "---\n\n"
-        
-        # Table of Contents
-        report += "## Table of Contents\n\n"
-        for i, section in enumerate(sections):
-            report += f"{i+1}. [{section['title']}](#{section['title'].lower().replace(' ', '-')})\n"
-        report += f"{len(sections)+1}. [References](#references)\n\n"
-        report += "---\n\n"
-        
-        # Sections
-        for i, section in enumerate(sections):
-            report += f"## {i+1}. {section['title']}\n\n"
-            report += section['content'] + "\n\n"
-        
-        # References
-        report += "---\n\n"
-        report += citations + "\n"
-        
-        return report
+            lines += [f"**Keywords:** {', '.join(keywords)}", ""]
+
+        lines += ["---", "", "## Table of Contents", ""]
+        toc_entries = ["Abstract"] + [s["title"] for s in sections] + ["References"]
+        for idx, name in enumerate(toc_entries, start=1):
+            anchor = name.lower().replace(" ", "-")
+            lines.append(f"{idx}. [{name}](#{anchor})")
+        lines += ["", "---", ""]
+
+        for i, section in enumerate(sections, start=1):
+            lines += [f"## {i}. {section['title']}", "", section["content"], ""]
+
+        lines += [
+            "---",
+            "",
+            citations if citations else "## References\n\nNo references available.",
+            "",
+        ]
+        return "\n".join(lines)
+

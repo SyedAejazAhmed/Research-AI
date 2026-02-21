@@ -12,6 +12,8 @@ import os
 import subprocess
 from typing import Optional, List, Dict, Any
 
+import httpx
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,29 +30,33 @@ class OllamaClient:
         self._initialized = False
         self.system_info = {}
         self.recommended_model = None
+        self._http_client = None  # persistent client, created on first use
+
+    def _get_http_client(self):
+        """Return (or lazily create) a shared httpx.AsyncClient."""
+        if self._http_client is None or self._http_client.is_closed:
+            self._http_client = httpx.AsyncClient(timeout=120.0)
+        return self._http_client
     
     def _get_system_info(self) -> Dict[str, Any]:
-        """Get system configuration (Windows specific falling back to generic)."""
-        info = {"ram_gb": 8, "cores": 4, "os": os.name}
+        """Get system configuration (cross-platform)."""
+        import multiprocessing
+        info = {"ram_gb": 8, "cores": multiprocessing.cpu_count(), "os": os.name}
         try:
-            if os.name == 'nt': # Windows
-                # RAM
+            if os.name == 'nt':  # Windows
                 cmd = "wmic computersystem get totalphysicalmemory"
                 out = subprocess.check_output(cmd, shell=True).decode()
                 mem = [line for line in out.splitlines() if line.strip() and "Total" not in line]
                 if mem:
                     info["ram_gb"] = int(int(mem[0].strip()) / (1024**3))
-                
-                # CPU Cores
-                cmd = "wmic cpu get NumberOfCores"
-                out = subprocess.check_output(cmd, shell=True).decode()
-                cores = [line for line in out.splitlines() if line.strip() and "Number" not in line]
-                if cores:
-                    info["cores"] = int(cores[0].strip())
-            else: # Unix/Mac basic fallback
-                import multiprocessing
-                info["cores"] = multiprocessing.cpu_count()
-                # Basic RAM fallback if needed
+            else:
+                # Linux / macOS
+                with open("/proc/meminfo") as f:
+                    for line in f:
+                        if line.startswith("MemTotal"):
+                            kb = int(line.split()[1])
+                            info["ram_gb"] = round(kb / (1024**2))
+                            break
         except Exception as e:
             logger.warning(f"Failed to get detailed system info: {e}")
         
@@ -86,40 +92,39 @@ class OllamaClient:
         self.recommended_model = self._recommend_model()
         
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(f"{self.base_url}/api/tags")
-                if resp.status_code == 200:
-                    data = resp.json()
-                    self.available_models = [m["name"] for m in data.get("models", [])]
+            client = self._get_http_client()
+            resp = await client.get(f"{self.base_url}/api/tags", timeout=10.0)
+            if resp.status_code == 200:
+                data = resp.json()
+                self.available_models = [m["name"] for m in data.get("models", [])]
 
-                    # Re-evaluate recommendation now that we know what's available
-                    self.recommended_model = self._recommend_model()
+                # Re-evaluate recommendation now that we know what's available
+                self.recommended_model = self._recommend_model()
 
-                    # If model not set, use recommended or first available
-                    if not self.model:
-                        if self.recommended_model in self.available_models:
-                            self.model = self.recommended_model
-                        elif any(self.recommended_model in m for m in self.available_models):
-                           # Match partial names
-                           for m in self.available_models:
-                               if self.recommended_model in m:
-                                   self.model = m
-                                   break
-                        
-                        if not self.model and self.available_models:
-                            self.model = self.available_models[0]
-                    
-                    # Auto-setup if requested and model missing
-                    if auto_setup and not self.model:
-                        logger.info(f"Auto-pulling recommended model: {self.recommended_model}")
-                        await self.pull_model(self.recommended_model)
+                # If model not set, use recommended or first available
+                if not self.model:
+                    if self.recommended_model in self.available_models:
                         self.model = self.recommended_model
-                        # Re-initialize to get updated tags
-                        return await self.initialize(auto_setup=False)
+                    elif any(self.recommended_model in m for m in self.available_models):
+                        # Match partial names
+                        for m in self.available_models:
+                            if self.recommended_model in m:
+                                self.model = m
+                                break
+                    
+                    if not self.model and self.available_models:
+                        self.model = self.available_models[0]
+                
+                # Auto-setup if requested and model missing
+                if auto_setup and not self.model:
+                    logger.info(f"Auto-pulling recommended model: {self.recommended_model}")
+                    await self.pull_model(self.recommended_model)
+                    self.model = self.recommended_model
+                    # Re-initialize to get updated tags
+                    return await self.initialize(auto_setup=False)
 
-                    self._initialized = True
-                    return True
+                self._initialized = True
+                return True
         except Exception as e:
             logger.warning(f"Ollama not available: {e}")
         
@@ -129,7 +134,6 @@ class OllamaClient:
     async def pull_model(self, model_name: str, callback=None):
         """Pull a model from Ollama library."""
         try:
-            import httpx
             logger.info(f"Pulling model: {model_name}")
             async with httpx.AsyncClient(timeout=None) as client:
                 async with client.stream(
@@ -155,7 +159,7 @@ class OllamaClient:
             logger.error(f"Failed to pull model {model_name}: {e}")
             raise
     
-    async def generate(self, prompt: str, system: str = None, temperature: float = 0.3) -> str:
+    async def generate(self, prompt: str, system: str = None, temperature: float = 0.3, max_tokens: int = 600) -> str:
         """Generate text using Ollama."""
         if not self._initialized:
             await self.initialize()
@@ -164,39 +168,41 @@ class OllamaClient:
             return self._fallback_response(prompt)
         
         try:
-            import httpx
-            
             payload = {
                 "model": self.model,
                 "prompt": prompt,
                 "stream": False,
                 "options": {
                     "temperature": temperature,
-                    "num_predict": 4096
+                    "num_predict": max_tokens
                 }
             }
             
             if system:
                 payload["system"] = system
             
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                resp = await client.post(
-                    f"{self.base_url}/api/generate",
-                    json=payload
-                )
+            client = self._get_http_client()
+            resp = await client.post(
+                f"{self.base_url}/api/generate",
+                json=payload,
+                timeout=300.0
+            )
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get("response", "")
+            else:
+                logger.error(f"Ollama error: {resp.status_code} - {resp.text}")
+                return self._fallback_response(prompt)
                 
-                if resp.status_code == 200:
-                    data = resp.json()
-                    return data.get("response", "")
-                else:
-                    logger.error(f"Ollama error: {resp.status_code} - {resp.text}")
-                    return self._fallback_response(prompt)
-                    
+        except httpx.TimeoutException as e:
+            logger.error(f"Ollama generation timeout ({type(e).__name__}) — model may be busy")
+            return self._fallback_response(prompt)
         except Exception as e:
-            logger.error(f"Ollama generation error: {e}")
+            logger.error(f"Ollama generation error ({type(e).__name__}): {e or repr(e)}")
             return self._fallback_response(prompt)
     
-    async def generate_stream(self, prompt: str, system: str = None, callback=None) -> str:
+    async def generate_stream(self, prompt: str, system: str = None, callback=None, max_tokens: int = 600) -> str:
         """Generate text using Ollama with streaming."""
         if not self._initialized:
             await self.initialize()
@@ -208,15 +214,13 @@ class OllamaClient:
             return result
         
         try:
-            import httpx
-            
             payload = {
                 "model": self.model,
                 "prompt": prompt,
                 "stream": True,
                 "options": {
                     "temperature": 0.3,
-                    "num_predict": 4096
+                    "num_predict": max_tokens
                 }
             }
             
@@ -225,23 +229,23 @@ class OllamaClient:
             
             full_response = ""
             
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                async with client.stream(
-                    "POST",
-                    f"{self.base_url}/api/generate",
-                    json=payload,
-                    timeout=120.0
-                ) as resp:
-                    async for line in resp.aiter_lines():
-                        if line:
-                            try:
-                                data = json.loads(line)
-                                token = data.get("response", "")
-                                full_response += token
-                                if callback and token:
-                                    await callback(token)
-                            except json.JSONDecodeError:
-                                continue
+            client = self._get_http_client()
+            async with client.stream(
+                "POST",
+                f"{self.base_url}/api/generate",
+                json=payload,
+                timeout=120.0
+            ) as resp:
+                async for line in resp.aiter_lines():
+                    if line:
+                        try:
+                            data = json.loads(line)
+                            token = data.get("response", "")
+                            full_response += token
+                            if callback and token:
+                                await callback(token)
+                        except json.JSONDecodeError:
+                            continue
             
             return full_response
             

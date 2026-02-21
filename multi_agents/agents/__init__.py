@@ -61,6 +61,9 @@ from .mcp_interface import MCPInterfaceAgent, MCPTool, MCPRequest, MCPResponse
 from .orchestrator import ChiefEditorAgent
 from .research_orchestrator import ResearchOrchestratorAgent
 
+# GitHub intelligence agent
+from .github_agent import GithubAgent, GithubAgentConfig
+
 # Zotero integration
 from .zotero_integration import (
     ZoteroIntegrationAgent,
@@ -123,4 +126,8 @@ __all__ = [
     "ZoteroCollection",
     "ZoteroItemType",
     "create_zotero_agent",
+
+    # GitHub agent
+    "GithubAgent",
+    "GithubAgentConfig",
 ]

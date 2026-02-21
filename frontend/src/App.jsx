@@ -1,13 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Send, FileText, Download, MessageSquare, ChevronRight, Zap, Database, Globe, Layers, Cpu, Sparkles, BookOpen, Share2, Activity, History, Settings, User, LogOut, Shield, Code2, CheckCircle, AlertCircle } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
+import { Search, Zap, Cpu, Sparkles, LogOut, Shield, Github, Tag, BookOpen, ChevronRight, Activity } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useResearch } from './hooks/useResearch';
-import ResearchMap from './components/ResearchMap';
 import Auth from './components/Auth';
 import Landing from './components/Landing';
-import ResearchHistory from './components/ResearchHistory';
+import ResearchWorkspace from './components/ResearchWorkspace';
 
 import DarkVeil from './components/DarkVeil';
 import PixelSnow from './components/PixelSnow';
@@ -120,15 +118,17 @@ const App = () => {
   const [sessions, setSessions] = useState({});
   const [query, setQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
-  const { connect, sendMessage, status, agents, report, plan, messages, sessionId } = useResearch();
-  const [activeTab, setActiveTab] = useState('pipeline');
-  const chatEndRef = useRef(null);
+  // GitHub project research mode
+  const [inputMode, setInputMode] = useState('topic');  // 'topic' | 'github'
+  const [githubUrl, setGithubUrl] = useState('');
+  const [githubTitle, setGithubTitle] = useState('');
+  const [isAnalyzingGithub, setIsAnalyzingGithub] = useState(false);
+  const [githubError, setGithubError] = useState(null);
+  const { connect, sendMessage, status, agents, logs, report, plan, sections, setSections, messages, sessionId } = useResearch();
   const [onboardingName, setOnboardingName] = useState('');
   const [systemStatus, setSystemStatus] = useState(null);
   const [showSystemModal, setShowSystemModal] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
-  const [writeResult, setWriteResult] = useState(null);
-  const [isWriting, setIsWriting] = useState(false);
 
   const fetchSystemStatus = async () => {
     try {
@@ -180,10 +180,6 @@ const App = () => {
   }, []);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  useEffect(() => {
     if (status !== 'idle') setIsSearching(true);
   }, [status]);
 
@@ -195,7 +191,6 @@ const App = () => {
         origin: { y: 0.6 },
         colors: ['#6366f1', '#a855f7', '#22d3ee']
       });
-      setActiveTab('report');
       fetchSessions();
     }
   }, [status]);
@@ -208,36 +203,38 @@ const App = () => {
     }
   }, [user, view]);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!user) {
-      setView('auth');
-      return;
-    }
-    if (!query.trim()) return;
-    connect(query);
-  };
+    if (!user) { setView('auth'); return; }
 
-  const handleExport = (format) => {
-    window.open(`/api/export/${sessionId}/${format}`, '_blank');
-  };
-
-  const handleWriteLatex = async () => {
-    if (!sessionId) return;
-    setIsWriting(true);
-    setActiveTab('latex');
-    try {
-      const resp = await fetch('/api/write', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionId, compile_pdf: true, template: 'article' })
-      });
-      const data = await resp.json();
-      setWriteResult(data);
-    } catch (e) {
-      setWriteResult({ status: 'error', compile_errors: [e.message] });
-    } finally {
-      setIsWriting(false);
+    if (inputMode === 'github') {
+      const url = githubUrl.trim();
+      if (!url) return;
+      setIsAnalyzingGithub(true);
+      setGithubError(null);
+      try {
+        const res = await fetch('/api/github/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ repo_url: url, existing_title: githubTitle.trim() || null }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'GitHub analysis failed');
+        // Use provided title > AI-generated title > URL slug
+        const researchQuery =
+          githubTitle.trim() ||
+          data.data?.title ||
+          url.replace('https://github.com/', '').replace(/\.git\/?$/, '');
+        setQuery(researchQuery);
+        connect(researchQuery);
+      } catch (err) {
+        setGithubError(String(err));
+      } finally {
+        setIsAnalyzingGithub(false);
+      }
+    } else {
+      if (!query.trim()) return;
+      connect(query);
     }
   };
 
@@ -386,369 +383,148 @@ const App = () => {
               The world's first <span className="text-white font-medium">autonomous research machine</span>. Deeply logical, perpetually verified.
             </p>
 
+            {/* Mode toggle */}
+            <div className="flex gap-1 p-1 rounded-xl bg-slate-900/60 border border-white/5 backdrop-blur mb-4">
+              <button
+                type="button"
+                onClick={() => { setInputMode('topic'); setGithubError(null); }}
+                className={`flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-bold uppercase tracking-widest transition-all ${inputMode === 'topic' ? 'bg-primary/20 text-primary border border-primary/30' : 'text-slate-500 hover:text-slate-300'}`}
+              >
+                <BookOpen size={14} /> Topic Research
+              </button>
+              <button
+                type="button"
+                onClick={() => { setInputMode('github'); setGithubError(null); }}
+                className={`flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-bold uppercase tracking-widest transition-all ${inputMode === 'github' ? 'bg-violet-500/20 text-violet-400 border border-violet-500/30' : 'text-slate-500 hover:text-slate-300'}`}
+              >
+                <Github size={14} /> GitHub Project
+              </button>
+            </div>
+
             <form onSubmit={handleSubmit} className="relative w-full max-w-2xl group">
               <div className="absolute -inset-2 bg-gradient-to-r from-primary via-secondary to-accent rounded-3xl blur-2xl opacity-10 group-hover:opacity-30 transition duration-1000 group-hover:duration-200" />
-              <div className="relative flex items-center bg-slate-900/40 backdrop-blur-3xl border border-white/10 rounded-2xl p-2 shadow-3xl">
-                <input
-                  type="text"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder={user ? "Ask Yukti to illuminate any topic..." : "Login to use the AI Research Agent..."}
-                  className="flex-1 bg-transparent py-4 px-6 text-xl outline-none font-light placeholder:text-slate-600"
-                />
-                <button
-                  type="submit"
-                  className="px-8 py-4 rounded-xl bg-gradient-to-r from-primary to-secondary text-white flex items-center gap-2 hover:scale-[1.02] active:scale-95 transition-all shadow-2xl shadow-primary/40 group/btn overflow-hidden relative"
-                >
-                  <div className="absolute inset-0 bg-white/10 translate-y-full group-hover/btn:translate-y-0 transition-transform" />
-                  {user ? <Search size={20} className="relative z-10" /> : <Shield size={20} className="relative z-10" />}
-                  <span className="font-black text-lg tracking-tight relative z-10">{user ? 'IGNITE' : 'LOGIN TO SEARCH'}</span>
-                </button>
-              </div>
+
+              {inputMode === 'topic' ? (
+                <div className="relative flex items-center bg-slate-900/40 backdrop-blur-3xl border border-white/10 rounded-2xl p-2 shadow-3xl">
+                  <input
+                    type="text"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder={user ? "Ask Yukti to illuminate any topic..." : "Login to use the AI Research Agent..."}
+                    className="flex-1 bg-transparent py-4 px-6 text-xl outline-none font-light placeholder:text-slate-600"
+                  />
+                  <button
+                    type="submit"
+                    className="px-8 py-4 rounded-xl bg-gradient-to-r from-primary to-secondary text-white flex items-center gap-2 hover:scale-[1.02] active:scale-95 transition-all shadow-2xl shadow-primary/40 group/btn overflow-hidden relative"
+                  >
+                    <div className="absolute inset-0 bg-white/10 translate-y-full group-hover/btn:translate-y-0 transition-transform" />
+                    {user ? <Search size={20} className="relative z-10" /> : <Shield size={20} className="relative z-10" />}
+                    <span className="font-black text-lg tracking-tight relative z-10">{user ? 'IGNITE' : 'LOGIN'}</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="relative flex flex-col gap-2 bg-slate-900/40 backdrop-blur-3xl border border-violet-500/20 rounded-2xl p-4 shadow-3xl">
+                  <div className="flex items-center gap-2 px-2 py-1">
+                    <Github size={16} className="text-violet-400 flex-shrink-0" />
+                    <input
+                      type="url"
+                      value={githubUrl}
+                      onChange={(e) => { setGithubUrl(e.target.value); setGithubError(null); }}
+                      placeholder="https://github.com/owner/repository"
+                      required
+                      className="flex-1 bg-transparent py-3 text-lg outline-none font-light placeholder:text-slate-600 text-white"
+                    />
+                  </div>
+                  <div className="h-px bg-white/5" />
+                  <div className="flex items-center gap-2 px-2 py-1">
+                    <Tag size={14} className="text-slate-500 flex-shrink-0" />
+                    <input
+                      type="text"
+                      value={githubTitle}
+                      onChange={(e) => setGithubTitle(e.target.value)}
+                      placeholder="Paper title (optional — will be auto-generated)"
+                      className="flex-1 bg-transparent py-2 text-sm outline-none font-light placeholder:text-slate-600 text-slate-300"
+                    />
+                  </div>
+                  {githubError && (
+                    <p className="text-xs text-red-400 px-2 pb-1">{githubError}</p>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={isAnalyzingGithub || !githubUrl.trim() || !user}
+                    className="mt-1 px-8 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-secondary text-white flex items-center justify-center gap-2 hover:scale-[1.01] active:scale-95 transition-all shadow-2xl shadow-violet-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isAnalyzingGithub ? (
+                      <>
+                        <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span className="font-black tracking-tight">ANALYSING REPO…</span>
+                      </>
+                    ) : (
+                      <>
+                        {user ? <Github size={18} /> : <Shield size={18} />}
+                        <span className="font-black tracking-tight">{user ? 'ANALYSE & RESEARCH' : 'LOGIN TO CONTINUE'}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
             </form>
 
-            <div className="mt-16">
-              <div className="flex flex-wrap justify-center gap-3 opacity-40 hover:opacity-100 transition-opacity duration-500">
-                {['Fusion Diagnostics', 'Quantum Ethics', 'Post-Scarcity Economics', 'Bio-Neural Interfaces'].map(topic => (
-                  <button
-                    key={topic}
-                    onClick={() => setQuery(topic)}
-                    className="px-5 py-2 rounded-full border border-white/5 bg-white/[0.02] text-[10px] font-medium hover:border-primary/50 hover:bg-primary/10 hover:text-white transition-all transform hover:-translate-y-1"
-                  >
-                    {topic}
-                  </button>
-                ))}
-              </div>
+            <div className="mt-12">
+              {inputMode === 'topic' ? (
+                <div className="flex flex-wrap justify-center gap-3 opacity-40 hover:opacity-100 transition-opacity duration-500">
+                  {['Fusion Diagnostics', 'Quantum Ethics', 'Post-Scarcity Economics', 'Bio-Neural Interfaces'].map(topic => (
+                    <button
+                      key={topic}
+                      onClick={() => setQuery(topic)}
+                      className="px-5 py-2 rounded-full border border-white/5 bg-white/[0.02] text-[10px] font-medium hover:border-primary/50 hover:bg-primary/10 hover:text-white transition-all transform hover:-translate-y-1"
+                    >
+                      {topic}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-wrap justify-center gap-3 opacity-40 hover:opacity-100 transition-opacity duration-500">
+                  {[
+                    { label: 'huggingface/transformers', url: 'https://github.com/huggingface/transformers' },
+                    { label: 'pytorch/pytorch', url: 'https://github.com/pytorch/pytorch' },
+                    { label: 'openai/whisper', url: 'https://github.com/openai/whisper' },
+                  ].map(ex => (
+                    <button
+                      key={ex.label}
+                      onClick={() => setGithubUrl(ex.url)}
+                      className="px-5 py-2 rounded-full border border-white/5 bg-white/[0.02] text-[10px] font-medium hover:border-violet-500/50 hover:bg-violet-500/10 hover:text-white transition-all transform hover:-translate-y-1"
+                    >
+                      <Github size={10} className="inline mr-1" />{ex.label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </motion.div>
         ) : (
           <motion.div
-            key="dashboard"
-            initial={{ opacity: 0, filter: 'blur(20px)' }}
+            key="workspace"
+            initial={{ opacity: 0, filter: 'blur(10px)' }}
             animate={{ opacity: 1, filter: 'blur(0px)' }}
-            className="h-screen flex flex-col p-4 md:p-6 lg:p-8 gap-6 overflow-hidden"
+            transition={{ duration: 0.4 }}
           >
-            {/* Top Bar Navigation */}
-            <div className="glass-card px-8 py-4 flex items-center justify-between">
-              <div className="flex items-center gap-6">
-                <div className="flex items-center gap-3 group cursor-pointer" onClick={() => window.location.reload()}>
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center font-black text-xl shadow-lg shadow-primary/20 text-white">Y</div>
-                  <GradientText
-                    colors={["#6366f1", "#a855f7", "#22d3ee", "#6366f1"]}
-                    animationSpeed={8}
-                    showBorder={false}
-                    className="font-outfit font-black text-2xl tracking-tighter"
-                  >
-                    YUKTI.AI
-                  </GradientText>
-                </div>
-
-                <div className="h-6 w-[1.5px] bg-white/10 mx-2" />
-
-                <div className="flex items-center gap-2">
-                  <div className={`w-2.5 h-2.5 rounded-full ${status === 'completed' ? 'bg-emerald-500 shadow-[0_0_10px_#10b981]' : 'bg-primary animate-ping'}`} />
-                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{status}</span>
-                </div>
-              </div>
-
-              <div className="flex-1 max-w-md mx-8">
-                <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
-                  <motion.div
-                    initial={{ width: 0 }}
-                    animate={{
-                      width: status === 'completed' ? '100%' :
-                        status === 'synthesising' ? '80%' :
-                          status === 'researching' ? '50%' :
-                            status === 'planning' ? '20%' : '5%'
-                    }}
-                    className="h-full bg-gradient-to-r from-primary to-accent"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={() => setShowSystemModal(true)}
-                  className="p-3 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 transition-all text-slate-400 hover:text-white"
-                >
-                  <Cpu size={18} className={systemStatus?.available ? 'text-emerald-400' : ''} />
-                </button>
-                {report && (
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => handleExport('pdf')} className="p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 transition-colors group">
-                      <Download size={18} />
-                    </button>
-                    <button onClick={() => handleExport('latex')} className="p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 transition-colors">
-                      <FileText size={18} />
-                    </button>
-                    <button
-                      onClick={handleWriteLatex}
-                      disabled={isWriting}
-                      className="flex items-center gap-2 px-5 py-3 bg-white text-slate-900 rounded-xl font-bold text-sm hover:scale-105 active:scale-95 transition-all shadow-xl shadow-white/10 disabled:opacity-50"
-                    >
-                      {isWriting ? <Activity className="animate-spin" size={16} /> : <Code2 size={16} />}
-                      {isWriting ? 'Compiling...' : 'Write LaTeX'}
-                    </button>
-                  </div>
-                )}
-                <button className="p-3 rounded-xl bg-white/5 border border-white/5 text-slate-400 hover:text-white transition-colors">
-                  <History size={18} />
-                </button>
-              </div>
-            </div>
-
-            {/* Main Content Grid */}
-            <div className="flex-1 grid grid-cols-12 gap-6 overflow-hidden">
-              {/* Left Sidebar - History Vault */}
-              <div className="col-span-3 flex flex-col gap-6 overflow-hidden">
-                <div className="glass-card p-6 flex flex-col gap-6 flex-1 overflow-hidden">
-                  <ResearchHistory
-                    sessions={sessions}
-                    onSelect={loadSession}
-                    activeSessionId={sessionId}
-                  />
-                </div>
-              </div>
-
-              {/* Center Viewport */}
-              <div className="col-span-9 flex flex-col gap-6 overflow-hidden">
-                <div className="glass-card flex-1 overflow-hidden flex flex-col relative">
-                  <AnimatePresence mode="wait">
-                    {activeTab === 'pipeline' && (
-                      <motion.div
-                        key="pipeline-view"
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 1.05 }}
-                        className="flex-1 flex flex-col p-12 overflow-y-auto items-center"
-                      >
-                        <div className="text-center mb-16">
-                          <h1 className="text-5xl font-black font-outfit mb-4">Autonomous Path</h1>
-                          <p className="text-slate-400 font-light text-lg">Visualizing the logic flow of the Yukti multi-agent cluster.</p>
-                        </div>
-
-                        <div className="w-full h-[400px]">
-                          <ResearchMap agents={agents} />
-                        </div>
-
-                        {plan && (
-                          <motion.div
-                            initial={{ opacity: 0, y: 30 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            className="w-full max-w-5xl mt-20 grid grid-cols-2 gap-6"
-                          >
-                            <div className="p-8 rounded-[2rem] bg-white/5 border border-white/10 relative overflow-hidden group">
-                              <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary mb-6">Research Landscape</h4>
-                              <p className="text-lg font-outfit font-light leading-relaxed text-slate-300 italic">"{plan.abstract_scope}"</p>
-                            </div>
-                            <div className="p-8 rounded-[2rem] bg-primary/5 border border-primary/20">
-                              <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary mb-6">Key Directives</h4>
-                              <div className="space-y-4">
-                                {plan.sub_questions.slice(0, 3).map((q, i) => (
-                                  <div key={i} className="flex gap-4">
-                                    <span className="text-primary font-bold text-xs">{i + 1}</span>
-                                    <span className="text-[11px] leading-tight text-slate-400">{q}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          </motion.div>
-                        )}
-                      </motion.div>
-                    )}
-
-                    {activeTab === 'report' && report && (
-                      <motion.div
-                        key="report-view"
-                        initial={{ opacity: 0, y: 40 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -40 }}
-                        className="flex-1 overflow-y-auto p-12 lg:p-20"
-                      >
-                        <div className="max-w-4xl mx-auto">
-                          <center className="mb-24">
-                            <div className="inline-block px-4 py-1 rounded-full bg-primary/10 text-primary text-[10px] font-black uppercase tracking-widest border border-primary/10 mb-8">Generated by Yukti Engine v4.0</div>
-                            <h1 className="text-7xl font-black font-outfit tracking-tighter leading-[0.9] mb-12">{report.title}</h1>
-                            <div className="flex items-center justify-center gap-12 text-slate-500 font-bold uppercase tracking-widest text-[10px]">
-                              <div className="flex flex-col items-center gap-2"><span className="text-white text-xl">{report.word_count}</span><span>Word Count</span></div>
-                              <div className="h-8 w-[1px] bg-white/10" />
-                              <div className="flex flex-col items-center gap-2"><span className="text-white text-xl">{report.statistics?.total_sources || 0}</span><span>Sources</span></div>
-                              <div className="h-8 w-[1px] bg-white/10" />
-                              <div className="flex flex-col items-center gap-2"><span className="text-white text-xl">{report.statistics?.verified_dois || 0}</span><span>Verified DOIs</span></div>
-                            </div>
-                          </center>
-
-                          <div className="prose prose-invert prose-2xl prose-slate max-w-none prose-headings:font-outfit prose-headings:font-black prose-p:leading-relaxed prose-p:font-light prose-p:text-slate-300 prose-strong:text-white prose-a:text-primary pb-32">
-                            <ReactMarkdown>{report.report}</ReactMarkdown>
-                          </div>
-                        </div>
-                      </motion.div>
-                    )}
-
-                    {activeTab === 'latex' && (
-                      <motion.div
-                        key="latex-view"
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0 }}
-                        className="flex-1 overflow-y-auto p-12"
-                      >
-                        {isWriting && (
-                          <div className="flex flex-col items-center justify-center h-64 gap-6">
-                            <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center animate-pulse">
-                              <Code2 size={32} className="text-primary" />
-                            </div>
-                            <p className="text-slate-400 font-light text-lg">Compiling LaTeX via Docker (texlive-compiler)...</p>
-                          </div>
-                        )}
-                        {writeResult && !isWriting && (
-                          <div className="max-w-3xl mx-auto space-y-8">
-                            <div className="flex items-center gap-4 mb-10">
-                              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${writeResult.pdf_success ? 'bg-emerald-500/10' : 'bg-amber-500/10'}`}>
-                                {writeResult.pdf_success
-                                  ? <CheckCircle size={28} className="text-emerald-400" />
-                                  : <Code2 size={28} className="text-amber-400" />}
-                              </div>
-                              <div>
-                                <h2 className="text-3xl font-black font-outfit tracking-tight">LaTeX Output</h2>
-                                <p className="text-slate-400 text-sm mt-1">
-                                  {writeResult.pdf_success ? 'PDF compiled successfully via Docker' : '.tex generated — PDF compilation pending'}
-                                </p>
-                              </div>
-                            </div>
-
-                            {/* File links */}
-                            <div className="grid grid-cols-2 gap-4">
-                              <a href={writeResult.download_tex} target="_blank" rel="noreferrer"
-                                className="flex items-center gap-4 p-6 rounded-2xl bg-white/5 border border-white/10 hover:border-primary/40 hover:bg-primary/5 transition-all group">
-                                <FileText size={24} className="text-primary group-hover:scale-110 transition-transform" />
-                                <div>
-                                  <div className="text-xs font-black uppercase tracking-widest text-slate-400 mb-1">LaTeX Source</div>
-                                  <div className="font-bold text-sm">Download .tex</div>
-                                </div>
-                                <Download size={16} className="ml-auto text-slate-600 group-hover:text-primary transition-colors" />
-                              </a>
-                              {writeResult.download_pdf ? (
-                                <a href={writeResult.download_pdf} target="_blank" rel="noreferrer"
-                                  className="flex items-center gap-4 p-6 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 hover:border-emerald-400/50 hover:bg-emerald-500/10 transition-all group">
-                                  <BookOpen size={24} className="text-emerald-400 group-hover:scale-110 transition-transform" />
-                                  <div>
-                                    <div className="text-xs font-black uppercase tracking-widest text-emerald-600 mb-1">Compiled PDF</div>
-                                    <div className="font-bold text-sm">Download .pdf</div>
-                                  </div>
-                                  <Download size={16} className="ml-auto text-emerald-700 group-hover:text-emerald-400 transition-colors" />
-                                </a>
-                              ) : (
-                                <div className="flex items-center gap-4 p-6 rounded-2xl bg-white/[0.02] border border-white/5 opacity-40">
-                                  <BookOpen size={24} className="text-slate-500" />
-                                  <div>
-                                    <div className="text-xs font-black uppercase tracking-widest text-slate-500 mb-1">PDF</div>
-                                    <div className="font-bold text-sm text-slate-500">Not compiled</div>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Compile errors */}
-                            {writeResult.compile_errors?.length > 0 && (
-                              <div className="p-6 rounded-2xl bg-red-500/5 border border-red-500/20">
-                                <div className="flex items-center gap-2 mb-4">
-                                  <AlertCircle size={16} className="text-red-400" />
-                                  <span className="text-xs font-black uppercase tracking-widest text-red-400">Compile Errors</span>
-                                </div>
-                                <div className="space-y-2">
-                                  {writeResult.compile_errors.map((e, i) => (
-                                    <div key={i} className="font-mono text-xs text-red-300 bg-red-500/10 rounded-lg px-4 py-2">{e}</div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Warnings */}
-                            {writeResult.compile_warnings?.length > 0 && (
-                              <div className="p-6 rounded-2xl bg-amber-500/5 border border-amber-500/20">
-                                <div className="text-xs font-black uppercase tracking-widest text-amber-400 mb-3">Warnings</div>
-                                <div className="space-y-1">
-                                  {writeResult.compile_warnings.slice(0, 5).map((w, i) => (
-                                    <div key={i} className="font-mono text-xs text-amber-300/70">{w}</div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </motion.div>
-                    )}
-
-                    {activeTab === 'chat' && (
-                      <motion.div
-                        key="chat-view"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        className="flex-1 flex flex-col relative"
-                      >
-                        <div className="flex-1 overflow-y-auto px-12 py-12 flex flex-col gap-10 pb-40">
-                          {messages.map((m, i) => (
-                            <motion.div
-                              initial={{ opacity: 0, y: 20 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              key={i}
-                              className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                            >
-                              <div className={`max-w-[70%] p-8 rounded-[2.5rem] shadow-3xl text-lg leading-relaxed ${m.role === 'user'
-                                ? 'bg-gradient-to-br from-primary to-secondary text-white rounded-tr-none'
-                                : 'glass rounded-tl-none border-white/5 bg-white/[0.03]'
-                                }`}>
-                                {m.content}
-                              </div>
-                            </motion.div>
-                          ))}
-                          <div ref={chatEndRef} />
-                        </div>
-
-                        <div className="absolute bottom-10 left-10 right-10 flex flex-col items-center">
-                          <form
-                            onSubmit={(e) => {
-                              e.preventDefault();
-                              const msg = e.target.msg.value;
-                              if (!msg) return;
-                              sendMessage(msg);
-                              e.target.reset();
-                            }}
-                            className="w-full max-w-4xl relative group"
-                          >
-                            <div className="absolute -inset-2 bg-gradient-to-r from-primary via-secondary to-accent rounded-[2.5rem] blur opacity-10 group-focus-within:opacity-40 transition duration-700" />
-                            <div className="relative">
-                              <input
-                                name="msg"
-                                placeholder="Query the synthesis engine for specific insights..."
-                                className="w-full bg-slate-900/90 backdrop-blur-3xl border border-white/10 rounded-[2.2rem] py-8 pl-10 pr-28 text-xl outline-none focus:border-primary/50 transition-all font-light"
-                              />
-                              <button className="absolute right-4 top-4 bottom-4 px-8 rounded-2xl bg-white text-slate-900 font-bold hover:scale-105 active:scale-95 transition-all shadow-xl">
-                                <Send size={24} />
-                              </button>
-                            </div>
-                          </form>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
-                  <div className="absolute bottom-6 left-12 flex items-center gap-6">
-                    {['pipeline', 'report', 'chat', 'latex'].map(t => (
-                      <button
-                        key={t}
-                        disabled={(t === 'report' && !report) || (t === 'chat' && status !== 'completed') || (t === 'latex' && !writeResult && !isWriting)}
-                        onClick={() => setActiveTab(t)}
-                        className={`text-[10px] font-black uppercase tracking-[0.2em] transition-all border-b-2 py-1 ${activeTab === t ? 'text-primary border-primary' : 'text-slate-600 border-transparent hover:text-slate-400'} ${((t === 'report' && !report) || (t === 'chat' && status !== 'completed') || (t === 'latex' && !writeResult && !isWriting)) ? 'opacity-20 cursor-not-allowed' : ''}`}
-                      >
-                        {t}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
+            <ResearchWorkspace
+              query={query}
+              sections={sections}
+              setSections={setSections}
+              plan={plan}
+              status={status}
+              sessionId={sessionId}
+              agents={agents}
+              logs={logs}
+              report={report}
+              messages={messages}
+              sendMessage={sendMessage}
+              onNewResearch={() => { setIsSearching(false); setSections([]); }}
+              systemStatus={systemStatus}
+              onOpenSystemModal={() => setShowSystemModal(true)}
+            />
           </motion.div>
         )}
       </AnimatePresence>
