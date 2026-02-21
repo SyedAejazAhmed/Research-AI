@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yukti Research AI - Autonomous Academic Research</title>
+    <meta name="description"
+        content="An Autonomous AI System for Logical & Verified Academic Research. Built for Prince PROTOTHON'26.">
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="/static/styles.css">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2005/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%236366f1'/><path d='M30 30h40v40H30z' fill='none' stroke='white' stroke-width='8'/><circle cx='50' cy='50' r='10' fill='white'/></svg>">
+</head>
+
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <div class="logo">
+                <div class="logo-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+                        <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+                    </svg>
+                </div>
+                <span>Yukti Research AI</span>
+            </div>
+            <div id="header-actions" class="header-actions">
+                <span id="header-query" class="text-muted"></span>
+            </div>
+        </header>
+
+        <!-- Hero Section -->
+        <section id="hero-section" class="hero">
+            <h1>Autonomous Academic Research</h1>
+            <p>Verified, cited, and logical research reports generated in minutes using a multi-agent orchestrated
+                pipeline.</p>
+
+            <div class="search-container">
+                <form id="search-form" class="search-wrapper">
+                    <input type="text" id="search-input" class="search-input"
+                        placeholder="Enter research topic (e.g. Impact of AI on Climate Change)" required>
+                    <button type="submit" class="search-btn">
+                        <span>Execute Research</span>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="22" y1="2" x2="11" y2="13"></line>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                        </svg>
+                    </button>
+                </form>
+
+                <div class="tags">
+                    <span class="tag">Quantum Computing Advancements</span>
+                    <span class="tag">Sustainable Urban Planning</span>
+                    <span class="tag">mRNA Vaccine Future</span>
+                    <span class="tag">Ethics of AGI</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- App Interface (Inside hidden initially) -->
+        <section id="app-interface" class="app-interface">
+            <!-- Sidebar: Agent Progress -->
+            <aside class="sidebar">
+                <h2>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path
+                            d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z">
+                        </path>
+                    </svg>
+                    Research Pipeline
+                </h2>
+
+                <div class="progress-bar-container">
+                    <div class="progress-fill"></div>
+                </div>
+
+                <div id="agent-list" class="agent-status-list">
+                    <!-- Agents populated by JS -->
+                </div>
+            </aside>
+
+            <!-- Main Content: Report Viewer -->
+            <main class="main-content">
+                <div class="content-header">
+                    <div class="status-indicator">
+                        <span class="loader"></span>
+                        <span id="current-agent"
+                            style="margin-left: 0.5rem; font-size: 0.8rem; font-weight: 600; color: var(--accent);">Processing...</span>
+                    </div>
+                    <div class="export-actions">
+                        <button id="export-md" class="tag" style="padding: 0.3rem 0.8rem;">Markdown</button>
+                        <button id="export-html" class="tag" style="padding: 0.3rem 0.8rem;">HTML</button>
+                        <button id="export-pdf" class="tag"
+                            style="padding: 0.3rem 0.8rem; background: var(--secondary); color: white;">PDF
+                            Report</button>
+                        <button id="export-latex" class="tag"
+                            style="padding: 0.3rem 0.8rem; background: var(--accent); color: white;">LaTeX
+                            (IEEE)</button>
+                    </div>
+                </div>
+
+                <div id="content-body" class="content-body">
+                    <!-- Visual Research Map -->
+                    <div id="research-map" class="research-map hidden">
+                        <div class="map-line"></div>
+                        <div class="map-node" data-agent="planner" title="Planner">📝</div>
+                        <div class="map-node" data-agent="academic_agent" title="Academic">📚</div>
+                        <div class="map-node" data-agent="aggregator" title="Aggregator">📥</div>
+                        <div class="map-node" data-agent="synthesizer" title="Synthesizer">🧠</div>
+                        <div class="map-node" data-agent="publisher" title="Publisher">📊</div>
+                    </div>
+
+                    <div id="report-content" class="report-content">
+                        <!-- Initial Loading State -->
+                        <div
+                            style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-muted);">
+                            <svg width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+                                style="margin-bottom: 1rem; opacity: 0.3;">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <line x1="12" y1="8" x2="12" y2="12"></line>
+                                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                            </svg>
+                            <p>Initializing parallel research agents...</p>
+                            <p style="font-size: 0.8rem;">Gathering context from ArXiv, PubMed, and Semantic Scholar</p>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </section>
+    </div>
+
+    <!-- Chat Toggle Button -->
+    <button id="chat-toggle" class="chat-toggle hidden"
+        style="position: fixed; right: 2rem; bottom: 2rem; width: 60px; height: 60px; border-radius: 50%; background: var(--primary); color: white; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 20px rgba(99,102,241,0.4); z-index: 101;">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+        </svg>
+    </button>
+
+    <!-- Chat Drawer -->
+    <div id="chat-drawer" class="chat-drawer">
+        <div class="chat-header">
+            <span style="font-weight: 700;">Research Assistant</span>
+            <button onclick="document.getElementById('chat-drawer').classList.remove('open')"
+                style="background: none; border: none; color: var(--text-muted); cursor: pointer;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+        <div id="chat-messages" class="chat-messages">
+            <div class="message assistant">Hello! I've analyzed the research report. How can I help you understand the
+                findings today?</div>
+        </div>
+        <form id="chat-form" class="chat-input-area">
+            <input type="text" id="chat-input" class="chat-input" placeholder="Ask a follow-up question..."
+                autocomplete="off">
+            <button type="submit"
+                style="background: var(--primary); border: none; color: white; border-radius: 50%; width: 36px; height: 36px; cursor: pointer; display: flex; align-items: center; justify-content: center;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+            </button>
+        </form>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/static/app.js"></script>
+</body>
+
+</html>
