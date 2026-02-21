@@ -10,26 +10,20 @@ const Auth = ({ onLogin, onBack }) => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setIsLoading(true);
-        const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
-
-        // Simulate network delay for UX
-        setTimeout(async () => {
-            try {
-                const response = await fetch(`http://localhost:8000${endpoint}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(formData)
-                });
-                const data = await response.json();
-                if (data.status === 'success') {
-                    onLogin(data);
-                }
-            } catch (e) {
-                console.error("Auth error", e);
-            } finally {
-                setIsLoading(false);
-            }
-        }, 800);
+        // Accept any email/password — no strict authentication required
+        setTimeout(() => {
+            const displayName = formData.name || formData.email.split('@')[0] || 'Scholar';
+            onLogin({
+                status: 'success',
+                user: {
+                    name: displayName,
+                    email: formData.email,
+                    role: 'academic'
+                },
+                token: 'session-' + Date.now()
+            });
+            setIsLoading(false);
+        }, 600);
     };
 
     return (

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Send, FileText, Download, MessageSquare, ChevronRight, Zap, Database, Globe, Layers, Cpu, Sparkles, BookOpen, Share2, Activity, History, Settings, User, LogOut, Shield } from 'lucide-react';
+import { Search, Send, FileText, Download, MessageSquare, ChevronRight, Zap, Database, Globe, Layers, Cpu, Sparkles, BookOpen, Share2, Activity, History, Settings, User, LogOut, Shield, Code2, CheckCircle, AlertCircle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import confetti from 'canvas-confetti';
 import { useResearch } from './hooks/useResearch';
@@ -127,10 +127,12 @@ const App = () => {
   const [systemStatus, setSystemStatus] = useState(null);
   const [showSystemModal, setShowSystemModal] = useState(false);
   const [isOptimizing, setIsOptimizing] = useState(false);
+  const [writeResult, setWriteResult] = useState(null);
+  const [isWriting, setIsWriting] = useState(false);
 
   const fetchSystemStatus = async () => {
     try {
-      const resp = await fetch('http://localhost:8000/api/status');
+      const resp = await fetch('/api/status');
       const data = await resp.json();
       setSystemStatus(data.llm);
     } catch (e) {
@@ -141,7 +143,7 @@ const App = () => {
   const runSystemOptimization = async () => {
     setIsOptimizing(true);
     try {
-      const resp = await fetch('http://localhost:8000/api/system/setup', { method: 'POST' });
+      const resp = await fetch('/api/system/setup', { method: 'POST' });
       const data = await resp.json();
       setSystemStatus(data.status);
       confetti({
@@ -165,7 +167,7 @@ const App = () => {
 
   const fetchSessions = async () => {
     try {
-      const resp = await fetch('http://localhost:8000/api/sessions');
+      const resp = await fetch('/api/sessions');
       const data = await resp.json();
       setSessions(data);
     } catch (e) {
@@ -217,12 +219,31 @@ const App = () => {
   };
 
   const handleExport = (format) => {
-    window.open(`http://localhost:8000/api/export/${sessionId}/${format}`, '_blank');
+    window.open(`/api/export/${sessionId}/${format}`, '_blank');
+  };
+
+  const handleWriteLatex = async () => {
+    if (!sessionId) return;
+    setIsWriting(true);
+    setActiveTab('latex');
+    try {
+      const resp = await fetch('/api/write', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId, compile_pdf: true, template: 'article' })
+      });
+      const data = await resp.json();
+      setWriteResult(data);
+    } catch (e) {
+      setWriteResult({ status: 'error', compile_errors: [e.message] });
+    } finally {
+      setIsWriting(false);
+    }
   };
 
   const loadSession = async (sid) => {
     try {
-      const resp = await fetch(`http://localhost:8000/api/sessions/${sid}`);
+      const resp = await fetch(`/api/sessions/${sid}`);
       const data = await resp.json();
       alert(`Loading Session: ${data.query}\nStatus: ${data.status}`);
     } catch (e) { }
@@ -457,8 +478,16 @@ const App = () => {
                     <button onClick={() => handleExport('pdf')} className="p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 transition-colors group">
                       <Download size={18} />
                     </button>
-                    <button onClick={() => handleExport('latex')} className="flex items-center gap-3 px-6 py-3 bg-white text-slate-900 rounded-xl font-bold text-sm hover:scale-105 active:scale-95 transition-all shadow-xl shadow-white/10">
-                      <Share2 size={16} /> Export IEEE
+                    <button onClick={() => handleExport('latex')} className="p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 transition-colors">
+                      <FileText size={18} />
+                    </button>
+                    <button
+                      onClick={handleWriteLatex}
+                      disabled={isWriting}
+                      className="flex items-center gap-2 px-5 py-3 bg-white text-slate-900 rounded-xl font-bold text-sm hover:scale-105 active:scale-95 transition-all shadow-xl shadow-white/10 disabled:opacity-50"
+                    >
+                      {isWriting ? <Activity className="animate-spin" size={16} /> : <Code2 size={16} />}
+                      {isWriting ? 'Compiling...' : 'Write LaTeX'}
                     </button>
                   </div>
                 )}
@@ -556,6 +585,101 @@ const App = () => {
                       </motion.div>
                     )}
 
+                    {activeTab === 'latex' && (
+                      <motion.div
+                        key="latex-view"
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0 }}
+                        className="flex-1 overflow-y-auto p-12"
+                      >
+                        {isWriting && (
+                          <div className="flex flex-col items-center justify-center h-64 gap-6">
+                            <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center animate-pulse">
+                              <Code2 size={32} className="text-primary" />
+                            </div>
+                            <p className="text-slate-400 font-light text-lg">Compiling LaTeX via Docker (texlive-compiler)...</p>
+                          </div>
+                        )}
+                        {writeResult && !isWriting && (
+                          <div className="max-w-3xl mx-auto space-y-8">
+                            <div className="flex items-center gap-4 mb-10">
+                              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${writeResult.pdf_success ? 'bg-emerald-500/10' : 'bg-amber-500/10'}`}>
+                                {writeResult.pdf_success
+                                  ? <CheckCircle size={28} className="text-emerald-400" />
+                                  : <Code2 size={28} className="text-amber-400" />}
+                              </div>
+                              <div>
+                                <h2 className="text-3xl font-black font-outfit tracking-tight">LaTeX Output</h2>
+                                <p className="text-slate-400 text-sm mt-1">
+                                  {writeResult.pdf_success ? 'PDF compiled successfully via Docker' : '.tex generated — PDF compilation pending'}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* File links */}
+                            <div className="grid grid-cols-2 gap-4">
+                              <a href={writeResult.download_tex} target="_blank" rel="noreferrer"
+                                className="flex items-center gap-4 p-6 rounded-2xl bg-white/5 border border-white/10 hover:border-primary/40 hover:bg-primary/5 transition-all group">
+                                <FileText size={24} className="text-primary group-hover:scale-110 transition-transform" />
+                                <div>
+                                  <div className="text-xs font-black uppercase tracking-widest text-slate-400 mb-1">LaTeX Source</div>
+                                  <div className="font-bold text-sm">Download .tex</div>
+                                </div>
+                                <Download size={16} className="ml-auto text-slate-600 group-hover:text-primary transition-colors" />
+                              </a>
+                              {writeResult.download_pdf ? (
+                                <a href={writeResult.download_pdf} target="_blank" rel="noreferrer"
+                                  className="flex items-center gap-4 p-6 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 hover:border-emerald-400/50 hover:bg-emerald-500/10 transition-all group">
+                                  <BookOpen size={24} className="text-emerald-400 group-hover:scale-110 transition-transform" />
+                                  <div>
+                                    <div className="text-xs font-black uppercase tracking-widest text-emerald-600 mb-1">Compiled PDF</div>
+                                    <div className="font-bold text-sm">Download .pdf</div>
+                                  </div>
+                                  <Download size={16} className="ml-auto text-emerald-700 group-hover:text-emerald-400 transition-colors" />
+                                </a>
+                              ) : (
+                                <div className="flex items-center gap-4 p-6 rounded-2xl bg-white/[0.02] border border-white/5 opacity-40">
+                                  <BookOpen size={24} className="text-slate-500" />
+                                  <div>
+                                    <div className="text-xs font-black uppercase tracking-widest text-slate-500 mb-1">PDF</div>
+                                    <div className="font-bold text-sm text-slate-500">Not compiled</div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Compile errors */}
+                            {writeResult.compile_errors?.length > 0 && (
+                              <div className="p-6 rounded-2xl bg-red-500/5 border border-red-500/20">
+                                <div className="flex items-center gap-2 mb-4">
+                                  <AlertCircle size={16} className="text-red-400" />
+                                  <span className="text-xs font-black uppercase tracking-widest text-red-400">Compile Errors</span>
+                                </div>
+                                <div className="space-y-2">
+                                  {writeResult.compile_errors.map((e, i) => (
+                                    <div key={i} className="font-mono text-xs text-red-300 bg-red-500/10 rounded-lg px-4 py-2">{e}</div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Warnings */}
+                            {writeResult.compile_warnings?.length > 0 && (
+                              <div className="p-6 rounded-2xl bg-amber-500/5 border border-amber-500/20">
+                                <div className="text-xs font-black uppercase tracking-widest text-amber-400 mb-3">Warnings</div>
+                                <div className="space-y-1">
+                                  {writeResult.compile_warnings.slice(0, 5).map((w, i) => (
+                                    <div key={i} className="font-mono text-xs text-amber-300/70">{w}</div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </motion.div>
+                    )}
+
                     {activeTab === 'chat' && (
                       <motion.div
                         key="chat-view"
@@ -611,12 +735,12 @@ const App = () => {
                   </AnimatePresence>
 
                   <div className="absolute bottom-6 left-12 flex items-center gap-6">
-                    {['pipeline', 'report', 'chat'].map(t => (
+                    {['pipeline', 'report', 'chat', 'latex'].map(t => (
                       <button
                         key={t}
-                        disabled={(t === 'report' && !report) || (t === 'chat' && status !== 'completed')}
+                        disabled={(t === 'report' && !report) || (t === 'chat' && status !== 'completed') || (t === 'latex' && !writeResult && !isWriting)}
                         onClick={() => setActiveTab(t)}
-                        className={`text-[10px] font-black uppercase tracking-[0.2em] transition-all border-b-2 py-1 ${activeTab === t ? 'text-primary border-primary' : 'text-slate-600 border-transparent hover:text-slate-400'} ${((t === 'report' && !report) || (t === 'chat' && status !== 'completed')) ? 'opacity-20 cursor-not-allowed' : ''}`}
+                        className={`text-[10px] font-black uppercase tracking-[0.2em] transition-all border-b-2 py-1 ${activeTab === t ? 'text-primary border-primary' : 'text-slate-600 border-transparent hover:text-slate-400'} ${((t === 'report' && !report) || (t === 'chat' && status !== 'completed') || (t === 'latex' && !writeResult && !isWriting)) ? 'opacity-20 cursor-not-allowed' : ''}`}
                       >
                         {t}
                       </button>

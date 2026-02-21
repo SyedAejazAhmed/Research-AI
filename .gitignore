@@ -27,3 +27,4 @@ package-lock.json
 Thumbs.db
 *.pyc
 venv/
+!.vscode/settings.json

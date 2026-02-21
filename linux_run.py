@@ -1,85 +1,130 @@
 """
 Yukti Research AI - Startup Script (Linux)
 ===========================================
-Installs dependencies and starts the FastAPI server.
+Installs dependencies, starts the Vite dev server (frontend on :5173)
+and the FastAPI backend (on :8000) together.
+
+Usage:
+  python3 linux_run.py            # start both servers
+  python3 linux_run.py --rebuild  # force npm install + rebuild
+  python3 linux_run.py --backend  # backend only (no frontend dev server)
 """
 
 import subprocess
 import sys
 import os
+import signal
+import time
 from pathlib import Path
 
+_procs = []  # track child processes for clean shutdown
+
+
+def _cleanup(sig=None, frame=None):
+    print("\n👋 Shutting down Yukti Research AI...")
+    for p in _procs:
+        try:
+            p.terminate()
+        except Exception:
+            pass
+    sys.exit(0)
+
+
+signal.signal(signal.SIGINT, _cleanup)
+signal.signal(signal.SIGTERM, _cleanup)
+
+
 def run_command(command, cwd=None):
-    print(f"Executing: {' '.join(command)}")
+    print(f"  ▸ {' '.join(command)}")
     try:
         subprocess.check_call(command, cwd=cwd)
         return True
     except subprocess.CalledProcessError as e:
-        print(f"Error executing command: {e}")
+        print(f"  ✗ Error: {e}")
         return False
     except FileNotFoundError as e:
-        print(f"Command not found: {e}")
+        print(f"  ✗ Command not found: {e}")
         return False
 
+
 def main():
-    print("🚀 Initializing Yukti Research AI...")
+    print("🚀 Initializing Yukti Research AI...\n")
 
-    # Check for virtual environment
+    backend_only = "--backend" in sys.argv
+    rebuild = "--rebuild" in sys.argv
+
+    # ── Virtual env check ─────────────────────────────────────────────
     if not os.environ.get('VIRTUAL_ENV'):
-        print("💡 Hint: You are not running in a virtual environment. It's recommended to use one.")
+        print("💡 Hint: Run inside a virtualenv for isolation.\n")
 
-    # Install requirements
-    print("📦 Checking dependencies...")
-    if not run_command([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"]):
-        print("❌ Failed to install dependencies.")
+    # ── Python dependencies ───────────────────────────────────────────
+    print("📦 Installing / verifying Python dependencies...")
+    if not run_command([sys.executable, "-m", "pip", "install", "-r", "requirements.txt", "-q"]):
+        print("❌ Failed to install Python dependencies.")
         return
+    print("  ✓ Python packages OK\n")
 
-    # Check for Ollama
-    print("🧪 Checking for Ollama...")
+    # ── Ollama check ──────────────────────────────────────────────────
+    print("🧠 Checking Ollama (gpt-oss:20b)...")
     try:
-        import httpx
-        import asyncio
+        import httpx, asyncio
 
         async def check_ollama():
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=5) as client:
                 try:
                     resp = await client.get("http://localhost:11434/api/tags")
                     if resp.status_code == 200:
-                        print("✅ Ollama is running.")
+                        models = [m["name"] for m in resp.json().get("models", [])]
+                        print(f"  ✓ Ollama running — available models: {models}")
+                        if any("gpt-oss" in m for m in models):
+                            print("  ✓ gpt-oss:20b detected ✅")
+                        else:
+                            print("  ⚠ gpt-oss:20b not found — will fall back to first available model")
                         return True
                 except Exception:
                     pass
-            print("⚠️ Ollama is NOT running or unreachable at http://localhost:11434")
-            print("💡 Please start Ollama for AI synthesis capabilities.")
+            print("  ⚠ Ollama not reachable at http://localhost:11434 — start Ollama for AI synthesis")
             return False
 
         asyncio.run(check_ollama())
     except ImportError:
         pass
+    print()
 
-    # Build Frontend if needed
+    # ── Frontend ──────────────────────────────────────────────────────
     frontend_dir = Path("frontend")
-    if frontend_dir.exists():
-        print("🎨 Building advanced React frontend...")
-        frontend_dist = frontend_dir / "dist"
-        if not frontend_dist.exists() or "--rebuild" in sys.argv:
-            print("📦 Installing frontend dependencies...")
-            run_command(["npm", "install"], cwd="frontend")
-            print("🏗️ Running build...")
-            run_command(["npm", "run", "build"], cwd="frontend")
-            print("✅ Frontend built successfully.")
-        else:
-            print("✨ Using existing frontend build.")
+    frontend_proc = None
 
-    # Start server
-    print("🌐 Starting server at http://localhost:8000")
+    if not backend_only and frontend_dir.exists():
+        # Install npm packages if needed
+        if not (frontend_dir / "node_modules").exists() or rebuild:
+            print("📦 Installing frontend npm packages...")
+            run_command(["npm", "install"], cwd="frontend")
+
+        print("🎨 Starting Vite dev server  →  http://localhost:5173")
+        frontend_proc = subprocess.Popen(
+            ["npm", "run", "dev"],
+            cwd="frontend",
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        _procs.append(frontend_proc)
+        time.sleep(1.5)  # give Vite a moment to start
+        print("  ✓ Frontend dev server started (PID", frontend_proc.pid, ")\n")
+
+    # ── Backend ───────────────────────────────────────────────────────
+    print("🌐 Starting FastAPI backend      →  http://localhost:8000")
+    print("   (Vite proxies /api and /ws automatically)\n")
+    print("─" * 60)
+
     try:
         import uvicorn
         uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
     except KeyboardInterrupt:
-        print("\n👋 Yukti Research AI stopped.")
-    except Exception as e:
-        print(f"❌ Server failed to start: {e}")
+        pass
+    finally:
+        _cleanup()
+
 
 if __name__ == "__main__":
     main()

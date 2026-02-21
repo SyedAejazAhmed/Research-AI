@@ -12,7 +12,14 @@ from pathlib import Path
 import re
 
 from .base import BaseAgent, AgentConfig, AgentResponse
-from .utils.llms import call_model
+
+# Lazy import – gpt_researcher may not be installed in all environments
+def _call_model_lazy():
+    try:
+        from .utils.llms import call_model as _cm
+        return _cm
+    except Exception:  # noqa: BLE001
+        return None
 
 
 @dataclass
@@ -468,7 +475,11 @@ Use proper LaTeX formatting for citations, equations if any, and figures."""
         ]
         
         if model:
-            content = await call_model(prompt, model=model)
+            call_model = _call_model_lazy()
+            if call_model:
+                content = await call_model(prompt, model=model)
+            else:
+                content = self.markdown_to_latex(research_data.get('content', ''))
         else:
             # Return a basic structure if no model
             content = self.markdown_to_latex(research_data.get('content', ''))

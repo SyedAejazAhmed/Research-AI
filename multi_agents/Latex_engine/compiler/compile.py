@@ -16,7 +16,7 @@ from .error_parser import parse_latex_log
 class LaTeXCompiler:
     def __init__(
         self,
-        image_name: str = "texlive-compiler",
+        image_name: str = "texlive-compiler:latest",
         timeout: int = 300,  # 5 minutes default
         memory_limit: str = "2g"
     ):

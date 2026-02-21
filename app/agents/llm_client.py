@@ -58,11 +58,19 @@ class OllamaClient:
         return info
 
     def _recommend_model(self) -> str:
-        """Recommend model based on RAM."""
+        """Recommend model based on available models and RAM."""
+        # Prefer gpt-oss:20b if available
+        preferred = "gpt-oss:20b"
+        if preferred in self.available_models:
+            return preferred
+        # Partial match (e.g. "gpt-oss:20b-..." variants)
+        for m in self.available_models:
+            if "gpt-oss" in m:
+                return m
+
         ram = self.system_info.get("ram_gb", 8)
-        
         if ram < 4:
-            return "phi3:3.8b-mini-4k-instruct-q4_K_M" # Extremely light
+            return "phi3:3.8b-mini-4k-instruct-q4_K_M"
         elif ram < 8:
             return "llama3.2:1b"
         elif ram < 14:
@@ -84,7 +92,10 @@ class OllamaClient:
                 if resp.status_code == 200:
                     data = resp.json()
                     self.available_models = [m["name"] for m in data.get("models", [])]
-                    
+
+                    # Re-evaluate recommendation now that we know what's available
+                    self.recommended_model = self._recommend_model()
+
                     # If model not set, use recommended or first available
                     if not self.model:
                         if self.recommended_model in self.available_models:

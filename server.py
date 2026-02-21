@@ -21,6 +21,7 @@ from pydantic import BaseModel
 
 from app.orchestrator import ResearchOrchestrator
 from app.agents.llm_client import OllamaClient
+from backend.writing_service import WritingService
 
 # Setup logging
 logging.basicConfig(
@@ -78,6 +79,9 @@ async def read_root():
 # Initialize orchestrator
 orchestrator = ResearchOrchestrator(output_dir=str(OUTPUT_DIR))
 
+# Initialize writing service
+writing_service = WritingService(output_dir=str(OUTPUT_DIR))
+
 # WebSocket connections
 active_connections: Dict[str, WebSocket] = {}
 
@@ -100,6 +104,12 @@ class ChatMessage(BaseModel):
 class ExportRequest(BaseModel):
     session_id: str
     format: str = "markdown"  # markdown, html
+
+class WriteRequest(BaseModel):
+    session_id: str
+    compile_pdf: bool = True
+    template: str = "article"   # article | ieee | acm
+    author: str = "Yukti Research AI"
 
 
 # ============================================================================
@@ -281,6 +291,80 @@ Rules:
     }
 
 
+# ============================================================================
+# Writing & LaTeX Endpoints
+# ============================================================================
+
+@app.post("/api/write")
+async def write_report(req: WriteRequest):
+    """
+    Generate a LaTeX document (and optionally a PDF) for a completed session.
+    The session must already have been completed via /api/research or /ws/research.
+    """
+    session = orchestrator.get_session(req.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    result_data = session.get("result")
+    if not result_data:
+        raise HTTPException(
+            status_code=400,
+            detail="Session has no completed research result. Run research first."
+        )
+
+    try:
+        write_result = await writing_service.write(
+            research_result=result_data,
+            session_id=req.session_id,
+            compile_pdf=req.compile_pdf,
+            template=req.template,
+            author=req.author,
+        )
+        return {
+            "status": "success",
+            "session_id": req.session_id,
+            "tex_path": write_result["tex_path"],
+            "pdf_path": write_result.get("pdf_path"),
+            "pdf_success": write_result["pdf_success"],
+            "compile_errors": write_result["compile_errors"],
+            "compile_warnings": write_result["compile_warnings"],
+            "download_tex": f"/api/export/{req.session_id}/latex",
+            "download_pdf": f"/api/export/{req.session_id}/pdf" if write_result["pdf_success"] else None,
+        }
+    except Exception as exc:
+        logger.error(f"Writing service error: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/write/raw")
+async def write_raw_report(request: ResearchRequest):
+    """
+    Run a full research pipeline AND generate LaTeX/PDF in one call.
+    """
+    session_id = str(uuid.uuid4())[:8]
+    try:
+        result = await orchestrator.run_research(
+            query=request.query,
+            session_id=session_id,
+            citation_style=request.citation_style,
+        )
+        write_result = await writing_service.write(
+            research_result=result,
+            session_id=session_id,
+            compile_pdf=True,
+        )
+        return {
+            "status": "success",
+            "session_id": session_id,
+            **write_result,
+            "download_tex": f"/api/export/{session_id}/latex",
+            "download_pdf": f"/api/export/{session_id}/pdf" if write_result["pdf_success"] else None,
+        }
+    except Exception as exc:
+        logger.error(f"Write-raw error: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @app.get("/api/export/{session_id}/{format}")
 async def export_report(session_id: str, format: str):
     """Export report in specified format."""
@@ -417,6 +501,47 @@ Rules: Only answer from report context. Use citations. Be concise. Markdown form
                     "session_id": session_id
                 })
             
+            elif action == "write":
+                session = orchestrator.get_session(session_id)
+                result_data = session.get("result") if session else None
+                if not result_data:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": "No completed research in this session. Run research first."
+                    })
+                    continue
+
+                await websocket.send_json({
+                    "type": "progress",
+                    "agent": "writer",
+                    "status": "started",
+                    "message": "Generating LaTeX document…"
+                })
+                try:
+                    write_result = await writing_service.write(
+                        research_result=result_data,
+                        session_id=session_id,
+                        compile_pdf=request.get("compile_pdf", True),
+                        template=request.get("template", "article"),
+                        author=request.get("author", "Yukti Research AI"),
+                    )
+                    await websocket.send_json({
+                        "type": "write_result",
+                        "data": {
+                            **write_result,
+                            "download_tex": f"/api/export/{session_id}/latex",
+                            "download_pdf": (
+                                f"/api/export/{session_id}/pdf"
+                                if write_result["pdf_success"] else None
+                            ),
+                        }
+                    })
+                except Exception as exc:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": f"Writing failed: {exc}"
+                    })
+
             elif action == "status":
                 await websocket.send_json({
                     "type": "status",
@@ -432,7 +557,6 @@ Rules: Only answer from report context. Use citations. Be concise. Markdown form
         logger.error(f"WebSocket error: {e}")
     finally:
         active_connections.pop(session_id, None)
-
 
 # ============================================================================
 # Entry Point

@@ -23,9 +23,9 @@ export const useResearch = () => {
 
     const connect = useCallback((query) => {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        // When running locally in dev, we might need a specific port if not using a proxy
-        // For production/built app, it's relative
-        const host = window.location.port === '5173' ? 'localhost:8000' : window.location.host;
+        // Always use current host — Vite proxy forwards /ws → backend in dev,
+        // and in production the backend serves on the same host.
+        const host = window.location.host;
         const wsUrl = `${protocol}//${host}/ws/research`;
 
         const ws = new WebSocket(wsUrl);
