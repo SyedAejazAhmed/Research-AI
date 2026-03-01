@@ -13,7 +13,7 @@ import re
 
 from .base import BaseAgent, AgentConfig, AgentResponse
 
-# Lazy import – gpt_researcher may not be installed in all environments
+# Lazy import – researcher may not be installed in all environments
 def _call_model_lazy():
     try:
         from .utils.llms import call_model as _cm

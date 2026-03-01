@@ -4,7 +4,7 @@ import logging
 import time
 from datetime import datetime, timedelta
 
-from gpt_researcher.llm_provider.generic.base import ReasoningEfforts
+from researcher.llm_provider.generic.base import ReasoningEfforts
 from ..utils.llm import create_chat_completion
 from ..utils.enum import ReportType, ReportSource, Tone
 from ..actions.query_processing import get_search_results

@@ -91,7 +91,7 @@ async def research_with_citations(query: str, report_type: str = "research_repor
     This is how you would integrate academic references into your
     existing GPTResearcher workflow.
     """
-    from gpt_researcher import GPTResearcher
+    from researcher import GPTResearcher
     
     # Standard research process
     researcher = GPTResearcher(query=query, report_type=report_type)

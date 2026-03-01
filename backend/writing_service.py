@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-# Ensure project root is on sys.path so local packages (multi_agents, gpt_researcher) are found
+# Ensure project root is on sys.path so local packages (multi_agents, researcher) are found
 _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))

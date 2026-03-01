@@ -10,63 +10,63 @@ def get_retriever(retriever: str):
     """
     match retriever:
         case "google":
-            from gpt_researcher.retrievers import GoogleSearch
+            from researcher.retrievers import GoogleSearch
 
             return GoogleSearch
         case "searx":
-            from gpt_researcher.retrievers import SearxSearch
+            from researcher.retrievers import SearxSearch
 
             return SearxSearch
         case "searchapi":
-            from gpt_researcher.retrievers import SearchApiSearch
+            from researcher.retrievers import SearchApiSearch
 
             return SearchApiSearch
         case "serpapi":
-            from gpt_researcher.retrievers import SerpApiSearch
+            from researcher.retrievers import SerpApiSearch
 
             return SerpApiSearch
         case "serper":
-            from gpt_researcher.retrievers import SerperSearch
+            from researcher.retrievers import SerperSearch
 
             return SerperSearch
         case "duckduckgo":
-            from gpt_researcher.retrievers import Duckduckgo
+            from researcher.retrievers import Duckduckgo
 
             return Duckduckgo
         case "bing":
-            from gpt_researcher.retrievers import BingSearch
+            from researcher.retrievers import BingSearch
 
             return BingSearch
         case "arxiv":
-            from gpt_researcher.retrievers import ArxivSearch
+            from researcher.retrievers import ArxivSearch
 
             return ArxivSearch
         case "tavily":
-            from gpt_researcher.retrievers import TavilySearch
+            from researcher.retrievers import TavilySearch
 
             return TavilySearch
         case "exa":
-            from gpt_researcher.retrievers import ExaSearch
+            from researcher.retrievers import ExaSearch
 
             return ExaSearch
         case "semantic_scholar":
-            from gpt_researcher.retrievers import SemanticScholarSearch
+            from researcher.retrievers import SemanticScholarSearch
 
             return SemanticScholarSearch
         case "pubmed_central":
-            from gpt_researcher.retrievers import PubMedCentralSearch
+            from researcher.retrievers import PubMedCentralSearch
 
             return PubMedCentralSearch
         case "custom":
-            from gpt_researcher.retrievers import CustomRetriever
+            from researcher.retrievers import CustomRetriever
 
             return CustomRetriever
         case "mcp":
-            from gpt_researcher.retrievers import MCPRetriever
+            from researcher.retrievers import MCPRetriever
 
             return MCPRetriever
         case "local_search":
-            from gpt_researcher.retrievers import LocalSearch
+            from researcher.retrievers import LocalSearch
 
             return LocalSearch
 
@@ -115,6 +115,6 @@ def get_retrievers(headers: dict[str, str], cfg):
 
 
 def get_default_retriever():
-    from gpt_researcher.retrievers import LocalSearch
+    from researcher.retrievers import LocalSearch
 
     return LocalSearch

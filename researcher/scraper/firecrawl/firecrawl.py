@@ -39,7 +39,7 @@ class FireCrawl:
     def scrape(self) -> tuple:
         """
         This function extracts content and title from a specified link using the FireCrawl Python SDK,
-        images from the link are extracted using the functions from `gpt_researcher/scraper/utils.py`.
+        images from the link are extracted using the functions from `researcher/scraper/utils.py`.
 
         Returns:
           The `scrape` method returns a tuple containing the extracted content, a list of image URLs, and

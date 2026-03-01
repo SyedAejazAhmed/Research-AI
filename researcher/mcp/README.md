@@ -14,7 +14,7 @@ Model Context Protocol (MCP) is an open standard that enables secure connections
 ## 📁 Module Structure
 
 ```
-gpt_researcher/mcp/
+researcher/mcp/
 ├── __init__.py           # Module initialization and imports
 ├── client.py             # MCP client management and configuration
 ├── tool_selector.py      # Intelligent tool selection using LLM
@@ -72,7 +72,7 @@ Real-time streaming and logging:
 #### 1. Configure MCP in GPT Researcher
 
 ```python
-from gpt_researcher import GPTResearcher
+from researcher import GPTResearcher
 
 # MCP configuration for a local server
 mcp_configs = [{
@@ -172,7 +172,7 @@ The MCP client automatically detects connection types:
 To customize tool selection logic, extend `MCPToolSelector`:
 
 ```python
-from gpt_researcher.mcp import MCPToolSelector
+from researcher.mcp import MCPToolSelector
 
 class CustomToolSelector(MCPToolSelector):
     def _fallback_tool_selection(self, all_tools, max_tools):
@@ -185,7 +185,7 @@ class CustomToolSelector(MCPToolSelector):
 Extend `MCPResearchSkill` for custom result processing:
 
 ```python
-from gpt_researcher.mcp import MCPResearchSkill
+from researcher.mcp import MCPResearchSkill
 
 class CustomResearchSkill(MCPResearchSkill):
     def _process_tool_result(self, tool_name, result):
@@ -231,7 +231,7 @@ Enable debug logging for detailed information:
 
 ```python
 import logging
-logging.getLogger('gpt_researcher.mcp').setLevel(logging.DEBUG)
+logging.getLogger('researcher.mcp').setLevel(logging.DEBUG)
 ```
 
 ## 📚 Resources

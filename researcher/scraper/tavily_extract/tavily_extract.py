@@ -26,7 +26,7 @@ class TavilyExtract:
     def scrape(self) -> tuple:
         """
         This function extracts content from a specified link using the Tavily Python SDK, the title and
-        images from the link are extracted using the functions from `gpt_researcher/scraper/utils.py`.
+        images from the link are extracted using the functions from `researcher/scraper/utils.py`.
 
         Returns:
           The `scrape` method returns a tuple containing the extracted content, a list of image URLs, and
