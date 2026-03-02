@@ -9,6 +9,12 @@ import sys
 import os
 from pathlib import Path
 
+# ── Resolve project root (one level above this script) ────────────────────────
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+os.chdir(PROJECT_ROOT)                      # ensure all relative paths resolve correctly
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))   # make project packages importable
+
 def run_command(command, cwd=None):
     print(f"Executing: {' '.join(command)}")
     try:
@@ -73,7 +79,7 @@ def main():
     print("🌐 Starting server at http://localhost:8000")
     try:
         import uvicorn
-        uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
+        uvicorn.run("backend.server:app", host="0.0.0.0", port=8000, reload=True)
     except KeyboardInterrupt:
         print("\n👋 Yukti Research AI stopped.")
     except Exception as e:

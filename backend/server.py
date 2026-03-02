@@ -21,7 +21,7 @@ from pydantic import BaseModel
 
 from app.orchestrator import ResearchOrchestrator
 from app.agents.llm_client import OllamaClient
-from backend.writing_service import WritingService
+from .writing_service import WritingService
 
 # Setup logging
 logging.basicConfig(
@@ -50,7 +50,7 @@ app.add_middleware(
 )
 
 # Static Files Configuration
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent.parent  # project root
 FRONTEND_DIST = BASE_DIR / "frontend" / "dist"
 STATIC_DIR = FRONTEND_DIST if FRONTEND_DIST.exists() else BASE_DIR / "app" / "static"
 OUTPUT_DIR = BASE_DIR / "outputs"
@@ -490,7 +490,7 @@ async def section_refine(req: SectionRefineRequest):
 class GithubAnalyzeRequest(BaseModel):
     repo_url: str
     existing_title: Optional[str] = None
-    output_dir: str = "./output/GitHub"
+    output_dir: str = "./outputs/GitHub"
     github_token: Optional[str] = None   # optional PAT for higher rate limits
 
 
@@ -752,7 +752,7 @@ Rules: Only answer from report context. Use citations. Be concise. Markdown form
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        "server:app",
+        "backend.server:app",
         host="0.0.0.0",
         port=8000,
         reload=True,

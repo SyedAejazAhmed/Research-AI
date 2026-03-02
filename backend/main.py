@@ -5,9 +5,9 @@ Installs dependencies, starts the Vite dev server (frontend on :5173)
 and the FastAPI backend (on :8000) together.
 
 Usage:
-  python3 linux_run.py            # start both servers
-  python3 linux_run.py --rebuild  # force npm install + rebuild
-  python3 linux_run.py --backend  # backend only (no frontend dev server)
+  python3 backend/main.py            # start both servers
+  python3 backend/main.py --rebuild  # force npm install + rebuild
+  python3 backend/main.py --backend  # backend only (no frontend dev server)
 """
 
 import subprocess
@@ -16,6 +16,13 @@ import os
 import signal
 import time
 from pathlib import Path
+
+# ── Resolve project root (one level above this script) ────────────────────────
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+os.chdir(PROJECT_ROOT)                      # ensure all relative paths resolve correctly
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))   # make project packages importable
+
 
 _procs = []  # track child processes for clean shutdown
 
@@ -119,7 +126,7 @@ def main():
 
     try:
         import uvicorn
-        uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
+        uvicorn.run("backend.server:app", host="0.0.0.0", port=8000, reload=True)
     except KeyboardInterrupt:
         pass
     finally:

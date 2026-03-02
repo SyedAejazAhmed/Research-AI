@@ -4,7 +4,7 @@ main.py
 CLI entry-point and orchestrator for the GitHub Repository Intelligence Agent.
 
 Usage:
-    python main.py --repo <github_url> [--title "optional title"] [--output ./GitHub]
+    python main.py --repo <github_url> [--title "optional title"] [--output ./outputs/GitHub]
 
 Environment:
     GEMINI_API_KEY  — Google AI / Gemini API key (can also be passed via --api-key).
@@ -77,7 +77,7 @@ def parse_args() -> argparse.Namespace:
         required=False,
         type=str,
         default=None,
-        help="Output directory path (default: ./GitHub).",
+        help="Output directory path (default: ./outputs/GitHub).",
     )
     parser.add_argument(
         "--api-key",
@@ -156,7 +156,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
         args: Parsed CLI arguments.
     """
     api_key = resolve_api_key(args.api_key)
-    output_dir = Path(args.output) if args.output else Path("./output/GitHub")
+    output_dir = Path(args.output) if args.output else Path("./outputs/GitHub")
     ensure_output_dirs(output_dir)
 
     # Instantiate modules

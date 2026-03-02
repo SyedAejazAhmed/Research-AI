@@ -66,7 +66,7 @@ class GithubAgentConfig(AgentConfig):
     description: str = "GitHub Repository Intelligence Agent (scrape mode)"
     repo_url: str = ""
     existing_title: Optional[str] = None
-    output_dir: str = "./output/GitHub"
+    output_dir: str = "./outputs/GitHub"
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "gpt-oss:20b"
     github_token: Optional[str] = None
