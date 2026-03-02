@@ -11,12 +11,16 @@ Yukti Research AI is a state-of-the-art autonomous research agent designed to de
 ## ✨ Premium Features (V4.5)
 
 ### 🎨 Academic-Futuristic Aesthetics
-- **Cinematic Visuals**: Immersive global backgrounds powered by vanilla WebGL shaders (**DarkVeil** & **PixelSnow**).
+- **Cinematic Visuals**: Immersive global backgrounds powered by vanilla WebGL shaders (**DarkVeil** & **PixelSnow**) using `ogl` and `three.js`.
 - **Neural Branding**: Dynamic animated text gradients that pulse with the platform's state.
 - **Glassmorphism UI**: High-fidelity interface using depth gradients and frosted glass effects for a professional academic feel.
+- **Interactive Onboarding**: A multi-step stepper powered by **Framer Motion** to guide scholars through the platform's core mechanisms.
 
-### 🧭 High-Fidelity Onboarding
-- **Guided Cognitive Initialization**: A multi-step onboarding stepper (powered by Framer Motion) that illuminates the platform's core mechanisms for new scholars.
+### 🧭 Advanced Research Capabilities
+- **Multi-Format Citations**: Professional support for 6 citation formats: **APA 7th, MLA 9th, Chicago, Harvard, IEEE, and Vancouver**.
+- **Deep Research Engine**: Conducts in-depth web and academic searches using **20+ verified sources** (ArXiv, PubMed, Semantic Scholar, etc.).
+- **LangGraph Orchestration**: A stateful multi-agent system (Chief Editor, Researcher, Reviewer, Writer) ensuring high-quality, peer-reviewed outputs.
+- **MCP Server Integration**: Machine Conversation Protocol support for deep research and real-time citation generation.
 
 ### 🛡️ Security & Privacy
 - **Auth-First Architecture**: Mandatory secure authentication (Auth Vault) before entering the research cockpit.
@@ -26,46 +30,51 @@ Yukti Research AI is a state-of-the-art autonomous research agent designed to de
 - **Neural Diagnostic Engine**: Automatically detects system RAM and CPU cores to recommend the optimal AI model.
 - **Zero-Config Setup**: One-click "Ignite Optimization" to automatically pull and install the recommended Ollama models.
 
-## 🚀 Core Pipeline
-1.  **Planner Agent**: Breaks query into sub-questions and defines research scope.
-2.  **Web Context Agent**: Gathers recent developments and general context.
-3.  **Academic Research Agent**: Concurrently searches ArXiv, PubMed, and Semantic Scholar.
-4.  **Document Processing Agent**: Ranks and filters sources for relevance and quality.
-5.  **Metadata & Citation Agent**: Validates DOIs and formats citations (APA/IEEE/MLA).
-6.  **Content Aggregator**: Unified dataset construction for LLM processing.
-7.  **Synthesizer Agent**: Local LLM synthesis with source grounding.
-8.  **Publisher Agent**: Generates academic-grade reports (MD, HTML, PDF, LaTeX).
+## 🏗️ Project Architecture
+
+The system is composed of several specialized modules:
+
+- **`app/`**: The core FastAPI backend orchestrating the primary research pipeline.
+- **`frontend/`**: A modern React 19 SPA with Tailwind CSS v4 and Framer Motion.
+- **`multi_agents/`**: LangGraph-powered research team (Chief Editor, Editor, Researcher, Reviewer, Revisor, Writer, Publisher).
+- **`mcp_server/`**: Specialized MCP server for deep research and citation formatting.
+- **`researcher/`**: Advanced retriever and scraper engine with support for ArXiv, Bing, Google, PubMed, and more.
+- **`github/`**: Integrated tools for repository handling, code summarization, and structure generation.
 
 ## 🛠️ Tech Stack
--   **Backend**: Python 3.11, FastAPI, WebSockets
+-   **Backend**: Python 3.11, FastAPI, WebSockets, LangGraph
 -   **LLM Engine**: Ollama (Local - Scalable from Phi-3 to Llama 3.1 8B)
--   **Frontend**: React 19, Tailwind CSS v4, Framer Motion, Vanilla WebGL
+-   **Frontend**: React 19, Tailwind CSS v4, Framer Motion, Three.js, OGL
+-   **Citation Engine**: Multi-source DOI validation & Formatting (6 Standards)
 -   **Team**: Dart Vadar - St. Joseph's College of Engineering
 
 ## 🏃 Getting Started
 
 ### Prerequisites
 -   **Python 3.11+**
+-   **Node.js & npm** (for frontend)
 -   **Ollama** installed and running (`ollama serve`)
 
 ### Installation & Run
-1.  **Clone/Open** the project directory.
+1.  **Clone the repository**.
 2.  **Install dependencies**:
     ```bash
     pip install -r requirements.txt
     cd frontend && npm install
     ```
-3.  **Run the startup script**:
+3.  **Setup Environment Variables**:
+    Create a `.env` file with necessary keys (Tavily, Google Search, etc. - see `researcher/config/`).
+4.  **Run the startup script**:
     ```bash
     python run.py
     ```
-4.  **Access the Dashboard**:
+5.  **Access the Dashboard**:
     Open [http://localhost:8000](http://localhost:8000).
 
 ## 🏆 Project Highlights
--   **Uniqueness**: Multi-agent planning avoids "random" LLM answers by enforcing a logical step-by-step methodology.
--   **Impact**: Accelerated innovation by reducing research time from hours to minutes.
--   **Credibility**: Citations are derived exclusively from verified DOI academic sources and processed through a **Hallucination Shield**.
+-   **Logical Methodologies**: Inspired by the STORM paper, our multi-agent pipeline avoids "random" LLM answers by enforcing structured planning and peer-review.
+-   **High Credibility**: Citations are derived exclusively from verified academic sources and processed through a **Hallucination Shield**.
+-   **Modern UX**: Combines deep technical research with a cinematic, high-performance UI.
 
 ---
 *Created with ❤️ for Prince PROTOTHON'26*
