@@ -29,3 +29,4 @@ Thumbs.db
 venv/
 !.vscode/settings.json
 *.pdf
+*.pyc

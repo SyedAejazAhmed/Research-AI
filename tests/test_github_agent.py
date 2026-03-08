@@ -53,7 +53,7 @@ if str(PROJECT_ROOT) not in sys.path:
 # ---------------------------------------------------------------------------
 # Imports under test
 # ---------------------------------------------------------------------------
-from multi_agents.agents.github_agent import (
+from multi_agent.agents.github_agent import (
     GithubAgent,
     GithubAgentConfig,
     REQUIRED_SECTIONS,

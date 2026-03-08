@@ -36,10 +36,10 @@ The system is composed of several specialized modules:
 
 - **`app/`**: The core FastAPI backend orchestrating the primary research pipeline.
 - **`frontend/`**: A modern React 19 SPA with Tailwind CSS v4 and Framer Motion.
-- **`multi_agents/`**: LangGraph-powered research team (Chief Editor, Editor, Researcher, Reviewer, Revisor, Writer, Publisher).
-- **`mcp_server/`**: Specialized MCP server for deep research and citation formatting.
-- **`researcher/`**: Advanced retriever and scraper engine with support for ArXiv, Bing, Google, PubMed, and more.
-- **`github/`**: Integrated tools for repository handling, code summarization, and structure generation.
+- **`multi_agent/`**: LangGraph-powered research team (Chief Editor, Editor, Researcher, Reviewer, Revisor, Writer, Publisher).
+- **`mcp_service/`**: Specialized MCP server for deep research and citation formatting.
+- **`search_engine/`**: Advanced retriever and scraper engine with support for ArXiv, Bing, Google, PubMed, and more.
+- **`repo_analyzer/`**: Integrated tools for repository handling, code summarization, and structure generation.
 
 ## 🛠️ Tech Stack
 -   **Backend**: Python 3.11, FastAPI, WebSockets, LangGraph
@@ -63,7 +63,7 @@ The system is composed of several specialized modules:
     cd frontend && npm install
     ```
 3.  **Setup Environment Variables**:
-    Create a `.env` file with necessary keys (Tavily, Google Search, etc. - see `researcher/config/`).
+    Create a `.env` file with necessary keys (Tavily, Google Search, etc. - see `search_engine/config/`).
 4.  **Run the startup script**:
     ```bash
     python run.py
