@@ -37,3 +37,6 @@ pdfplumber>=0.10.0
 numpy>=1.24.0
 pyzotero>=1.5.0
 python-docx>=0.8.11
+# Additional dependencies for new features
+psutil>=5.9.0
+GPUtil>=1.4.0
