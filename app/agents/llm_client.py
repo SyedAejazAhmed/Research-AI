@@ -41,7 +41,15 @@ class OllamaClient:
     def _get_system_info(self) -> Dict[str, Any]:
         """Get system configuration (cross-platform)."""
         import multiprocessing
-        info = {"ram_gb": 8, "cores": multiprocessing.cpu_count(), "os": os.name}
+        import shutil
+        info = {
+            "ram_gb": 8,
+            "available_ram_gb": 4,
+            "disk_free_gb": None,
+            "cores": multiprocessing.cpu_count(),
+            "os": os.name,
+            "has_gpu": False,
+        }
         try:
             if os.name == 'nt':  # Windows
                 cmd = "wmic computersystem get totalphysicalmemory"
@@ -49,6 +57,15 @@ class OllamaClient:
                 mem = [line for line in out.splitlines() if line.strip() and "Total" not in line]
                 if mem:
                     info["ram_gb"] = int(int(mem[0].strip()) / (1024**3))
+                try:
+                    avail_out = subprocess.check_output(
+                        "wmic OS get FreePhysicalMemory", shell=True
+                    ).decode()
+                    avail_mem = [ln for ln in avail_out.splitlines() if ln.strip() and "Free" not in ln]
+                    if avail_mem:
+                        info["available_ram_gb"] = round(int(avail_mem[0].strip()) / (1024**2), 1)
+                except Exception:
+                    pass
             else:
                 # Linux / macOS
                 with open("/proc/meminfo") as f:
@@ -56,10 +73,28 @@ class OllamaClient:
                         if line.startswith("MemTotal"):
                             kb = int(line.split()[1])
                             info["ram_gb"] = round(kb / (1024**2))
-                            break
+                        elif line.startswith("MemAvailable"):
+                            kb = int(line.split()[1])
+                            info["available_ram_gb"] = round(kb / (1024**2), 1)
+
+            # Free disk space
+            disk = shutil.disk_usage("/")
+            info["disk_free_gb"] = round(disk.free / (1024**3), 1)
+
+            # GPU detection (NVIDIA via nvidia-smi)
+            try:
+                result = subprocess.run(
+                    ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+                    capture_output=True, text=True, timeout=2,
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    info["has_gpu"] = True
+            except Exception:
+                pass
+
         except Exception as e:
             logger.warning(f"Failed to get detailed system info: {e}")
-        
+
         self.system_info = info
         return info
 

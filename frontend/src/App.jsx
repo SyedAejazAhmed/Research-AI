@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Zap, Cpu, Sparkles, LogOut, Shield, Github, Tag, BookOpen, ChevronRight, Activity } from 'lucide-react';
+import { Search, Zap, Cpu, Sparkles, LogOut, Shield, Github, Tag, BookOpen, ChevronRight, Activity, HardDrive, Server, Database, TrendingUp } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useResearch } from './hooks/useResearch';
 import Auth from './components/Auth';
@@ -34,82 +34,234 @@ const Background = () => (
 );
 
 
-const SystemModal = ({ status, onOptimize, isOptimizing, onClose }) => (
-  <motion.div
-    initial={{ opacity: 0 }}
-    animate={{ opacity: 1 }}
-    exit={{ opacity: 0 }}
-    className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-xl"
-  >
+const SystemModal = ({ status, onOptimize, isOptimizing, onClose }) => {
+  const ram = status?.system_info?.ram_gb || 0;
+  const availRam = status?.system_info?.available_ram_gb ?? (ram * 0.5);
+  const usedRam = Math.max(0, ram - availRam);
+  const ramPct = ram > 0 ? Math.min(100, Math.round((usedRam / ram) * 100)) : 0;
+  const cores = status?.system_info?.cores || 0;
+  const diskFree = status?.system_info?.disk_free_gb ?? null;
+  const hasGpu = status?.system_info?.has_gpu ?? false;
+  const availableModels = status?.models || [];
+
+  const tier =
+    ram >= 48 ? { label: 'APEX',     color: 'text-violet-400', bg: 'bg-violet-500/10', border: 'border-violet-500/30' } :
+    ram >= 24 ? { label: 'ELITE',    color: 'text-cyan-400',   bg: 'bg-cyan-500/10',   border: 'border-cyan-500/30'   } :
+    ram >= 12 ? { label: 'ADVANCED', color: 'text-emerald-400',bg: 'bg-emerald-500/10',border: 'border-emerald-500/30'} :
+                { label: 'STANDARD', color: 'text-slate-400',  bg: 'bg-slate-500/10',  border: 'border-slate-500/30'  };
+
+  const techniques = [
+    { name: 'INT4 Neural Quantization',   active: ram >= 8,    desc: '4× memory compression via quantization'     },
+    { name: 'Parallel Core Processing',   active: cores >= 8,  desc: `Inference spread across ${cores} CPU cores` },
+    { name: 'KV-Cache Optimization',      active: ram >= 16,   desc: 'Key-value attention caching in RAM'         },
+    { name: 'Hardware-Adaptive Scaling',  active: true,        desc: 'Auto-tunes context window to hardware'      },
+  ];
+
+  return (
     <motion.div
-      initial={{ scale: 0.9, y: 20 }}
-      animate={{ scale: 1, y: 0 }}
-      className="glass-card max-w-lg w-full p-8 relative overflow-hidden"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-xl"
     >
-      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary via-secondary to-accent" />
+      <motion.div
+        initial={{ scale: 0.9, y: 20 }}
+        animate={{ scale: 1, y: 0 }}
+        className="glass-card max-w-xl w-full relative overflow-hidden"
+      >
+        {/* Gradient accent bar */}
+        <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-primary via-secondary to-accent" />
 
-      <div className="flex items-center justify-between mb-8">
-        <div className="flex items-center gap-3">
-          <div className="p-3 rounded-xl bg-primary/10 text-primary">
-            <Cpu size={24} />
-          </div>
-          <h2 className="text-2xl font-black font-outfit tracking-tight">Neural Optimization</h2>
-        </div>
-        <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-lg transition-colors text-slate-500 hover:text-white">
-          <ChevronRight className="rotate-90" size={20} />
-        </button>
-      </div>
-
-      <div className="space-y-6">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="p-4 rounded-2xl bg-white/5 border border-white/5">
-            <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Memory Capacity</div>
-            <div className="text-xl font-bold">{status?.system_info?.ram_gb || 0} GB RAM</div>
-          </div>
-          <div className="p-4 rounded-2xl bg-white/5 border border-white/5">
-            <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Processor Cores</div>
-            <div className="text-xl font-bold">{status?.system_info?.cores || 0} Logic Cores</div>
-          </div>
-        </div>
-
-        <div className="p-6 rounded-2xl bg-primary/5 border border-primary/20">
-          <div className="flex items-center justify-between mb-4">
-            <div className="text-[10px] font-black uppercase tracking-widest text-primary">Current Model</div>
-            <div className={`px-2 py-0.5 rounded text-[9px] font-bold ${status?.available ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
-              {status?.available ? 'ACTIVE' : 'OFFLINE'}
+        {/* ── Header ── */}
+        <div className="flex items-center justify-between px-6 pt-6 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20">
+              <Cpu size={20} />
+            </div>
+            <div>
+              <h2 className="text-xl font-black font-outfit tracking-tight leading-none">Neural Optimization</h2>
+              <p className="text-[10px] text-slate-500 mt-0.5">Hardware Intelligence Engine</p>
             </div>
           </div>
-          <div className="text-lg font-bold font-mono text-slate-300 mb-1">{status?.model || 'None Connected'}</div>
-          <div className="text-[11px] text-slate-500">Ollama API: {status?.base_url}</div>
+          <div className="flex items-center gap-2">
+            <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${tier.bg} ${tier.color} ${tier.border}`}>
+              {tier.label} TIER
+            </span>
+            <button onClick={onClose} className="p-1.5 hover:bg-white/5 rounded-lg transition-colors text-slate-500 hover:text-white">
+              <ChevronRight className="rotate-90" size={18} />
+            </button>
+          </div>
         </div>
 
-        <div className="p-6 rounded-2xl bg-secondary/5 border border-secondary/20 relative group">
-          <div className="text-[10px] font-black uppercase tracking-widest text-secondary mb-3">Yukti Recommendation</div>
-          <div className="text-lg font-bold text-white mb-2">{status?.recommended}</div>
-          <p className="text-[11px] text-slate-400 leading-relaxed">Based on your hardware, we recommend this model for the best balance between synthesis depth and processing speed.</p>
-        </div>
-      </div>
+        {/* ── Scrollable Body ── */}
+        <div className="px-6 pb-6 space-y-4 max-h-[72vh] overflow-y-auto">
 
-      <button
-        disabled={isOptimizing}
-        onClick={onOptimize}
-        className="w-full mt-10 py-4 rounded-xl bg-white text-slate-900 font-bold flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
-      >
-        {isOptimizing ? (
-          <>
-            <Activity className="animate-spin" size={20} />
-            <span>OPTIMIZING NEURAL PATHS...</span>
-          </>
-        ) : (
-          <>
-            <Zap size={20} className="fill-current" />
-            <span>IGNITE SYSTEM OPTIMIZATION</span>
-          </>
-        )}
-      </button>
+          {/* Hardware metrics */}
+          <div className="grid grid-cols-3 gap-3">
+
+            {/* RAM card (spans 2 cols) */}
+            <div className="col-span-2 p-4 rounded-2xl bg-white/[0.03] border border-white/[0.06] space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-1">
+                  <HardDrive size={10} /> Memory Capacity
+                </span>
+                <span className="text-[9px] font-bold text-slate-500">{ramPct}% IN USE</span>
+              </div>
+              <div className="text-2xl font-bold leading-none">
+                {ram.toFixed(0)}
+                <span className="text-sm font-normal text-slate-400 ml-1">GB RAM</span>
+              </div>
+              {/* Animated RAM bar */}
+              <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${ramPct}%` }}
+                  transition={{ duration: 1, ease: 'easeOut' }}
+                  className={`h-full rounded-full ${ramPct > 80 ? 'bg-red-500' : ramPct > 60 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                />
+              </div>
+              <div className="text-[10px] text-slate-500">
+                {availRam.toFixed(1)} GB free · {usedRam.toFixed(1)} GB used
+              </div>
+            </div>
+
+            {/* CPU + GPU stacked */}
+            <div className="flex flex-col gap-3">
+              <div className="flex-1 p-3 rounded-2xl bg-white/[0.03] border border-white/[0.06]">
+                <div className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Processor</div>
+                <div className="text-xl font-bold leading-none">{cores}</div>
+                <div className="text-[10px] text-slate-500">Logic Cores</div>
+              </div>
+              <div className={`flex-1 p-3 rounded-2xl border ${hasGpu ? 'bg-violet-500/5 border-violet-500/20' : 'bg-white/[0.03] border-white/[0.06]'}`}>
+                <div className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">GPU</div>
+                <div className={`text-[10px] font-bold ${hasGpu ? 'text-violet-400' : 'text-slate-500'}`}>
+                  {hasGpu ? '● DETECTED' : '○ CPU MODE'}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Current Model */}
+          <div className="p-4 rounded-2xl bg-primary/5 border border-primary/20 relative overflow-hidden">
+            {status?.available && (
+              <motion.div
+                animate={{ opacity: [0.3, 0.8, 0.3] }}
+                transition={{ duration: 2, repeat: Infinity }}
+                className="absolute top-3 right-3 h-2 w-2 rounded-full bg-emerald-400"
+              />
+            )}
+            <div className="flex items-center gap-2 mb-2">
+              <Server size={11} className="text-primary" />
+              <div className="text-[9px] font-black uppercase tracking-widest text-primary">Current Model</div>
+              <div className={`px-1.5 py-0.5 rounded text-[8px] font-black ${status?.available ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+                {status?.available ? 'ACTIVE' : 'OFFLINE'}
+              </div>
+            </div>
+            <div className="text-base font-bold font-mono text-white">{status?.model || 'None Connected'}</div>
+            <div className="text-[10px] text-slate-500 mt-1">Ollama API · {status?.base_url}</div>
+          </div>
+
+          {/* Installed Models chips */}
+          {availableModels.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5">
+                <Database size={10} className="text-slate-500" />
+                <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">
+                  Installed Models <span className="text-slate-600 normal-case tracking-normal font-normal">({availableModels.length})</span>
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {availableModels.map(m => (
+                  <span
+                    key={m}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-mono font-medium border transition-colors ${
+                      m === status?.model
+                        ? 'bg-primary/10 text-primary border-primary/30'
+                        : 'bg-white/5 text-slate-400 border-white/10'
+                    }`}
+                  >
+                    {m}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Yukti Recommendation */}
+          <div className="p-4 rounded-2xl bg-secondary/5 border border-secondary/20">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1.5">
+                <TrendingUp size={11} className="text-secondary" />
+                <span className="text-[9px] font-black uppercase tracking-widest text-secondary">Yukti Recommendation</span>
+              </div>
+              <Sparkles size={12} className="text-secondary" />
+            </div>
+            <div className="text-base font-bold font-mono text-white mb-1">{status?.recommended || '—'}</div>
+            <p className="text-[10px] text-slate-400 leading-relaxed">
+              Based on your hardware, we recommend this model for the best balance between synthesis depth and processing speed.
+            </p>
+          </div>
+
+          {/* Optimization Techniques */}
+          <div className="space-y-2">
+            <div className="text-[9px] font-black uppercase tracking-widest text-slate-500">Optimization Techniques</div>
+            <div className="grid grid-cols-2 gap-2">
+              {techniques.map(t => (
+                <div
+                  key={t.name}
+                  className={`p-3 rounded-xl border transition-all ${
+                    t.active
+                      ? 'bg-emerald-500/5 border-emerald-500/20'
+                      : 'bg-white/[0.02] border-white/5'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <div className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${t.active ? 'bg-emerald-400' : 'bg-slate-700'}`} />
+                    <span className={`text-[8px] font-black uppercase tracking-wide ${t.active ? 'text-emerald-400' : 'text-slate-600'}`}>
+                      {t.active ? 'ENABLED' : 'INACTIVE'}
+                    </span>
+                  </div>
+                  <div className={`text-[10px] font-bold mb-0.5 ${t.active ? 'text-white' : 'text-slate-600'}`}>{t.name}</div>
+                  <div className="text-[9px] text-slate-600 leading-tight">{t.desc}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Disk Space */}
+          {diskFree !== null && (
+            <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <HardDrive size={11} className="text-slate-500" />
+                <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Free Disk Space</span>
+              </div>
+              <span className="text-sm font-bold text-slate-300">{Number(diskFree).toFixed(1)} GB</span>
+            </div>
+          )}
+
+          {/* Action Button */}
+          <button
+            disabled={isOptimizing}
+            onClick={onOptimize}
+            className="w-full py-4 rounded-xl bg-gradient-to-r from-primary via-secondary to-accent text-white font-black text-sm flex items-center justify-center gap-2 hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {isOptimizing ? (
+              <>
+                <Activity className="animate-spin" size={18} />
+                <span>OPTIMIZING NEURAL PATHS...</span>
+              </>
+            ) : (
+              <>
+                <Zap size={18} className="fill-current" />
+                <span>IGNITE SYSTEM OPTIMIZATION</span>
+              </>
+            )}
+          </button>
+        </div>
+      </motion.div>
     </motion.div>
-  </motion.div>
-);
+  );
+};
 
 const App = () => {
   const [view, setView] = useState('landing');
