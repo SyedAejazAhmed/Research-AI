@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import { User, Lock, Mail, ChevronRight, ArrowLeft, ShieldCheck, Globe, Linkedin, Sparkles } from 'lucide-react';
 
 const Auth = ({ onLogin, onBack }) => {

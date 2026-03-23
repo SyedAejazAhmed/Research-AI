@@ -12,7 +12,7 @@
  *  - Word-count summary
  */
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import { Download, Loader2, Eye, EyeOff } from 'lucide-react';
 import { SECTION_ORDER, SECTION_META } from './SectionSidebar';
 

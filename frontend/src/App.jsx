@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import { Search, Zap, Cpu, Sparkles, LogOut, Shield, Github, Tag, BookOpen, ChevronRight, Activity, HardDrive, Server, Database, TrendingUp } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useResearch } from './hooks/useResearch';
@@ -268,7 +268,6 @@ const App = () => {
   const [view, setView] = useState('landing');
   const [user, setUser] = useState(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const [sessions, setSessions] = useState({});
   const [query, setQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   // GitHub project research mode
@@ -316,20 +315,6 @@ const App = () => {
     fetchSystemStatus();
     const interval = setInterval(fetchSystemStatus, 30000);
     return () => clearInterval(interval);
-  }, []);
-
-  const fetchSessions = async () => {
-    try {
-      const resp = await fetch('/api/sessions');
-      const data = await resp.json();
-      setSessions(data);
-    } catch (e) {
-      console.error("Fetch sessions error", e);
-    }
-  };
-
-  useEffect(() => {
-    fetchSessions();
   }, []);
 
   useEffect(() => {
@@ -389,14 +374,6 @@ const App = () => {
       if (!query.trim()) return;
       connect(query);
     }
-  };
-
-  const loadSession = async (sid) => {
-    try {
-      const resp = await fetch(`/api/sessions/${sid}`);
-      const data = await resp.json();
-      alert(`Loading Session: ${data.query}\nStatus: ${data.status}`);
-    } catch (e) { }
   };
 
   const startAppFlow = () => {

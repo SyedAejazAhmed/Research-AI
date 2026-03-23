@@ -211,7 +211,7 @@ export default function SectionReviewPanel({ sections, setSections, sessionId, s
 
       {/* Section stepper */}
       <div className="flex gap-2 flex-wrap">
-        {SECTION_ORDER.map((key, idx) => {
+        {SECTION_ORDER.map((key) => {
           const sec = sorted.find(s => s.key === key);
           const isApproved = approvedKeys.has(key);
           const isActive = activeKey === key;

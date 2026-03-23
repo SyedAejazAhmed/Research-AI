@@ -21,6 +21,8 @@ logs/
 # Node
 node_modules/
 package-lock.json
+dist/
+build/
 
 # OS
 .DS_Store

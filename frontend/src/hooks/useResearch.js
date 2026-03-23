@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
 
 export const useResearch = () => {
     const [socket, setSocket] = useState(null);
@@ -72,7 +72,9 @@ export const useResearch = () => {
                         try {
                             const jsonStr = data.message.match(/\{.*\}/s)[0];
                             setPlan(JSON.parse(jsonStr));
-                        } catch (e) { }
+                        } catch {
+                            // Failed to parse plan JSON
+                        }
                     }
                     break;
                 }

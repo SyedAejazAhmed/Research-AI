@@ -5,7 +5,7 @@
  * Calls POST /api/github/analyze and shows the result.
  */
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 
 const STEPS = [
   { label: 'Validate URL', icon: '🔗' },
@@ -138,7 +138,7 @@ export default function GithubAnalyzer() {
         <div className="bg-gray-900 border border-gray-700 rounded-xl p-5">
           <p className="text-xs text-gray-400 mb-4 uppercase tracking-wider font-medium">Pipeline Running</p>
           <div className="flex flex-col gap-3">
-            {STEPS.map((step, i) => (
+            {STEPS.map((step) => (
               <div key={step.label} className="flex items-center gap-3">
                 <span className="text-lg">{step.icon}</span>
                 <span className="text-sm text-gray-300">{step.label}</span>
