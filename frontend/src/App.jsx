@@ -6,6 +6,7 @@ import { useResearch } from './hooks/useResearch';
 import Auth from './components/Auth';
 import Landing from './components/Landing';
 import ResearchWorkspace from './components/ResearchWorkspace';
+import ZoteroCitationLibrary from './components/ZoteroCitationLibrary';
 
 import DarkVeil from './components/DarkVeil';
 import PixelSnow from './components/PixelSnow';
@@ -424,6 +425,18 @@ const App = () => {
     </>
   );
 
+  if (view === 'zotero') return (
+    <div className="relative min-h-screen">
+      <button
+        onClick={() => setView('app')}
+        className="fixed top-4 left-4 z-50 glass px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-white/10 transition-all border border-white/5"
+      >
+        Back to App
+      </button>
+      <ZoteroCitationLibrary />
+    </div>
+  );
+
   if (showOnboarding) return (
     <div className="min-h-screen flex items-center justify-center p-6 relative">
       <Background />
@@ -498,6 +511,14 @@ const App = () => {
             className="min-h-screen flex flex-col items-center justify-center p-6 text-center z-10"
           >
             <div className="absolute top-10 right-10 flex items-center gap-4">
+              {user && (
+                <button
+                  onClick={() => setView('zotero')}
+                  className="glass px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-white/10 transition-all border border-white/5"
+                >
+                  Zotero Library
+                </button>
+              )}
               <button
                 onClick={() => setShowSystemModal(true)}
                 className="glass p-3 rounded-xl hover:bg-white/10 transition-all border border-white/5 relative group"

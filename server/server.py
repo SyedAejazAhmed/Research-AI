@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import uuid
+import hashlib
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional
@@ -20,6 +21,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from app.orchestrator import ResearchOrchestrator
+from app.database.schema import ResearchDatabase
+from app.agents.latex_writing_agent import LaTeXWritingAgent
 from app.agents.llm_client import OllamaClient
 from .writing_service import WritingService
 
@@ -78,6 +81,8 @@ async def read_root():
 
 # Initialize orchestrator
 orchestrator = ResearchOrchestrator(output_dir=str(OUTPUT_DIR))
+citation_db = ResearchDatabase("research_ai.db")
+latex_writer = LaTeXWritingAgent()
 
 # Initialize writing service
 writing_service = WritingService(output_dir=str(OUTPUT_DIR))
@@ -133,6 +138,21 @@ class SectionRefineRequest(BaseModel):
     paper_title: str = "Research Paper"
     context_summary: str = ""   # optional: brief abstract/keywords for context
     session_id: str = ""
+
+
+class CitationCreateRequest(BaseModel):
+    title: str
+    authors: List[str]
+    year: Optional[int] = None
+    source: Optional[str] = None
+    doi: Optional[str] = None
+    url: Optional[str] = None
+    abstract: Optional[str] = None
+    keywords: List[str] = []
+
+
+class CitationExportRequest(BaseModel):
+    citation_ids: List[str] = []
 
 
 # ============================================================================
@@ -258,6 +278,98 @@ async def get_session(session_id: str):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     return session
+
+
+@app.get("/api/citations")
+async def list_citations(
+    q: Optional[str] = None,
+    collection_id: Optional[str] = None,
+    limit: int = 200
+):
+    """List/search citations for Zotero library UI."""
+    if collection_id:
+        cursor = citation_db.conn.cursor()
+        cursor.execute(
+            """
+            SELECT c.*
+            FROM citations c
+            JOIN citation_collections cc ON c.id = cc.citation_id
+            WHERE cc.collection_id = ?
+              AND (? IS NULL OR c.title LIKE ? OR c.abstract LIKE ?)
+            ORDER BY c.year DESC, c.title
+            LIMIT ?
+            """,
+            (
+                collection_id,
+                q,
+                f"%{q}%" if q else None,
+                f"%{q}%" if q else None,
+                limit,
+            ),
+        )
+        citations = [dict(row) for row in cursor.fetchall()]
+    else:
+        citations = citation_db.search_citations(query=q, limit=limit)
+
+    return {"success": True, "citations": citations, "count": len(citations)}
+
+
+@app.get("/api/citations/collections")
+async def list_collections():
+    """List citation collections with item counts."""
+    cursor = citation_db.conn.cursor()
+    cursor.execute(
+        """
+        SELECT c.*, COUNT(cc.citation_id) as item_count
+        FROM collections c
+        LEFT JOIN citation_collections cc ON c.id = cc.collection_id
+        GROUP BY c.id
+        ORDER BY c.name
+        """
+    )
+    collections = [dict(row) for row in cursor.fetchall()]
+    return {"success": True, "collections": collections, "count": len(collections)}
+
+
+@app.post("/api/citations")
+async def create_citation(citation: CitationCreateRequest):
+    """Create a citation entry."""
+    citation_id = hashlib.sha256(
+        f"{citation.title}_{citation.doi or ''}".encode()
+    ).hexdigest()[:16]
+
+    success = citation_db.add_citation(
+        citation_id=citation_id,
+        title=citation.title,
+        authors=citation.authors,
+        year=citation.year,
+        source=citation.source,
+        doi=citation.doi,
+        url=citation.url,
+        abstract=citation.abstract,
+        keywords=citation.keywords,
+    )
+
+    if not success:
+        raise HTTPException(status_code=400, detail="Citation already exists")
+
+    return {"success": True, "citation_id": citation_id}
+
+
+@app.post("/api/citations/export/bibtex")
+async def export_bibtex(request: CitationExportRequest):
+    """Export selected or all citations as BibTeX."""
+    if request.citation_ids:
+        citations = [
+            citation_db.get_citation(cid)
+            for cid in request.citation_ids
+            if citation_db.get_citation(cid)
+        ]
+    else:
+        citations = citation_db.search_citations(limit=1000)
+
+    bibtex = latex_writer._generate_bibtex(citations)
+    return {"success": True, "bibtex": bibtex, "count": len(citations)}
 
 
 @app.post("/api/chat")
