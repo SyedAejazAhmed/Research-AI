@@ -34,6 +34,18 @@ class LaTeXSection:
         """Render section to LaTeX."""
         commands = {1: 'section', 2: 'subsection', 3: 'subsubsection'}
         cmd = commands.get(self.level, 'section')
+        safe_title = self.title
+        for src, dst in [
+            ('\\', r'\textbackslash{}'),
+            ('&', r'\&'),
+            ('%', r'\%'),
+            ('$', r'\$'),
+            ('#', r'\#'),
+            ('_', r'\_'),
+            ('{', r'\{'),
+            ('}', r'\}'),
+        ]:
+            safe_title = safe_title.replace(src, dst)
         label_str = ""
         if self.label:
             label_str = f"\\label{{{self.label}}}"
@@ -42,7 +54,7 @@ class LaTeXSection:
             safe_label = re.sub(r'[^a-zA-Z0-9]', '', self.title.lower())
             label_str = f"\\label{{sec:{safe_label}}}"
         
-        return f"\\{cmd}{{{self.title}}}{label_str}\n\n{self.content}\n"
+        return f"\\{cmd}{{{safe_title}}}{label_str}\n\n{self.content}\n"
 
 
 @dataclass
@@ -438,7 +450,7 @@ class LaTeXWriterAgent(BaseAgent):
         
         # Sections
         for section in doc.sections:
-            latex += self.create_section(section.title, section.content, section.level)
+            latex += section.to_latex()
             latex += "\n"
         
         # Bibliography
