@@ -68,9 +68,17 @@ def main():
         frontend_dist = frontend_dir / "dist"
         if not frontend_dist.exists() or "--rebuild" in sys.argv:
             print("📦 Installing frontend dependencies...")
-            run_command(["cmd", "/c", "npm", "install"], cwd="frontend")
+            # Cross-platform npm command
+            npm_cmd = ["npm", "install"]
+            if sys.platform == "win32":
+                npm_cmd = ["cmd", "/c", "npm", "install"]
+            run_command(npm_cmd, cwd="frontend")
+
             print("🏗️ Running build...")
-            run_command(["cmd", "/c", "npm", "run", "build"], cwd="frontend")
+            npm_build_cmd = ["npm", "run", "build"]
+            if sys.platform == "win32":
+                npm_build_cmd = ["cmd", "/c", "npm", "run", "build"]
+            run_command(npm_build_cmd, cwd="frontend")
             print("✅ Frontend built successfully.")
         else:
             print("✨ Using existing frontend build.")
