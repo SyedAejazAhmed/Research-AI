@@ -299,6 +299,7 @@ export default function ResearchWorkspace({
           plan={plan}
           approvedKeys={approvedKeys}
           sessionId={sessionId}
+          report={report}
         />
       </div>
     </div>

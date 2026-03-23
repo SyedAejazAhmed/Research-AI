@@ -38,6 +38,7 @@ export default function IEEEPreview({
   plan,           // {title, query, keywords}
   approvedKeys,   // Set<string>
   sessionId,
+  report,
 }) {
   const [compiling, setCompiling] = useState(false);
   const [compileResult, setCompileResult] = useState(null);
@@ -45,6 +46,38 @@ export default function IEEEPreview({
 
   const paperTitle  = plan?.title || plan?.query || 'Research Paper';
   const paperDate   = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
+
+  function getReferenceLines() {
+    const c = report?.citations || {};
+
+    // Preferred: explicit formatted list
+    if (Array.isArray(c.formatted) && c.formatted.length) {
+      return c.formatted.map((entry, idx) => {
+        if (typeof entry === 'string') return entry;
+        if (entry?.citation) return entry.citation;
+        if (entry?.text) return entry.text;
+        return `[${idx + 1}] ${String(entry)}`;
+      });
+    }
+
+    // Fallback: citations list with 'formatted' entries
+    if (Array.isArray(c.citations) && c.citations.length) {
+      const fromList = c.citations
+        .map((item, idx) => item?.formatted || item?.citation || `[${idx + 1}] ${String(item)}`)
+        .filter(Boolean);
+      if (fromList.length) return fromList;
+    }
+
+    // Fallback: parse numbered lines from formatted_text markdown
+    if (typeof c.formatted_text === 'string' && c.formatted_text.trim()) {
+      return c.formatted_text
+        .split('\n')
+        .map(l => l.trim())
+        .filter(l => /^\[\d+\]\s+/.test(l));
+    }
+
+    return [];
+  }
 
   async function handleGeneratePDF() {
     const abstractSec = sections.find(s => s.key === 'abstract');
@@ -62,6 +95,12 @@ export default function IEEEPreview({
       })
       .filter(Boolean);
 
+    const referenceLines = getReferenceLines();
+    const citationPayload = {
+      formatted: referenceLines,
+      formatted_text: referenceLines.length ? `## References\n\n${referenceLines.join('\n\n')}` : '',
+    };
+
     setCompiling(true);
     setCompileResult(null);
     try {
@@ -72,7 +111,7 @@ export default function IEEEPreview({
           title:       paperTitle,
           abstract:    abstractText,
           sections:    bodySections,
-          citations:   {},
+          citations:   citationPayload,
           compile_pdf: true,
           template:    'article',
           author:      'Yukti Research AI',
@@ -189,6 +228,29 @@ export default function IEEEPreview({
               );
             })}
           </div>
+
+          {/* References snapshot */}
+          {(() => {
+            const refs = getReferenceLines();
+            if (!refs.length) return null;
+            return (
+              <div className="mt-3 pt-2 border-t border-gray-300" style={{ breakInside: 'avoid' }}>
+                <div style={{ fontSize: '9px', fontWeight: 'bold', marginBottom: '2px' }}>
+                  REFERENCES ({refs.length})
+                </div>
+                {refs.slice(0, 6).map((ref, i) => (
+                  <p key={i} style={{ fontSize: '8px', lineHeight: '1.35', marginBottom: '2px' }}>
+                    {stripMd(ref)}
+                  </p>
+                ))}
+                {refs.length > 6 && (
+                  <p style={{ fontSize: '8px' }} className="text-gray-600">
+                    +{refs.length - 6} more references
+                  </p>
+                )}
+              </div>
+            );
+          })()}
         </div>
       </div>
 

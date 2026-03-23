@@ -8,6 +8,8 @@ generates final report, and handles export (PDF/Word).
 import logging
 import json
 import os
+import shutil
+import tempfile
 from typing import Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
@@ -39,6 +41,8 @@ class PublisherAgent:
         
         full_report = synthesis.get("full_report", "")
         title = synthesis.get("title", "Research Report")
+        compile_errors = []
+        compile_warnings = []
         
         # Save markdown report
         report_path = self.output_dir / f"{session_id}_report.md"
@@ -54,15 +58,6 @@ class PublisherAgent:
         with open(html_path, "w", encoding="utf-8") as f:
             f.write(html_content)
 
-        # Generate PDF version
-        pdf_path = self.output_dir / f"{session_id}_report.pdf"
-        try:
-            self._generate_pdf(full_report, title, str(pdf_path))
-            has_pdf = True
-        except Exception as e:
-            logger.error(f"PDF generation error: {e}")
-            has_pdf = False
-            
         # Generate LaTeX version (IEEE Style)
         latex_path = self.output_dir / f"{session_id}_report.tex"
         try:
@@ -71,6 +66,23 @@ class PublisherAgent:
         except Exception as e:
             logger.error(f"LaTeX generation error: {e}")
             has_latex = False
+
+        # Generate PDF from TeX first (preferred), fallback to markdown PDF.
+        pdf_path = self.output_dir / f"{session_id}_report.pdf"
+        has_pdf = False
+        if has_latex:
+            has_pdf, compile_errors, compile_warnings = self._compile_pdf_from_tex(
+                tex_path=str(latex_path),
+                output_pdf_path=str(pdf_path)
+            )
+
+        if not has_pdf:
+            try:
+                self._generate_pdf(full_report, title, str(pdf_path))
+                has_pdf = True
+            except Exception as e:
+                logger.error(f"PDF generation error: {e}")
+                has_pdf = False
         
         # Save session metadata
         metadata = {
@@ -83,8 +95,10 @@ class PublisherAgent:
                 "markdown": str(report_path),
                 "html": str(html_path),
                 "pdf": str(pdf_path) if has_pdf else None,
-                "latex": str(latex_path) if has_latex else None
-            }
+                "latex": str(latex_path) if has_latex else None,
+                "compile_errors": compile_errors,
+                "compile_warnings": compile_warnings,
+            },
         }
         
         meta_path = self.output_dir / f"{session_id}_meta.json"
@@ -105,21 +119,91 @@ class PublisherAgent:
                 "latex": str(latex_path) if has_latex else None,
                 "metadata": str(meta_path)
             },
+            "compile_errors": compile_errors,
+            "compile_warnings": compile_warnings,
             "word_count": synthesis.get("word_count", 0),
             "timestamp": datetime.now().isoformat()
         }
 
+    def _compile_pdf_from_tex(self, tex_path: str, output_pdf_path: str):
+        """Compile PDF from an existing TeX file using the LaTeX Docker compiler."""
+        try:
+            from multi_agent.Latex_engine.compiler.compile import LaTeXCompiler
+
+            with tempfile.TemporaryDirectory(prefix="yukti_pub_") as tmpdir:
+                tex_name = os.path.basename(tex_path)
+                tmp_tex = os.path.join(tmpdir, tex_name)
+                shutil.copy(tex_path, tmp_tex)
+
+                compiler = LaTeXCompiler(image_name="texlive-compiler:latest", timeout=300)
+                result = compiler.compile(tex_file=tex_name, workspace_path=tmpdir, bibtex=False)
+
+                errors = result.get("errors", [])
+                warnings = result.get("warnings", [])
+                pdf_tmp_path = result.get("pdf_path")
+
+                if result.get("success") and pdf_tmp_path and os.path.exists(pdf_tmp_path):
+                    shutil.copy(pdf_tmp_path, output_pdf_path)
+                    return True, errors, warnings
+
+                logger.warning(f"TeX to PDF compilation failed: {errors}")
+                return False, errors, warnings
+
+        except Exception as e:
+            logger.error(f"TeX to PDF compilation error: {e}")
+            return False, [str(e)], []
+
     def _generate_latex(self, synthesis: Dict, output_path: str):
-        """Generate a LaTeX file following the IEEE pattern."""
+        """Generate an IEEE-style LaTeX file, preferring the repository template file."""
         title = synthesis.get("title", "Research Report")
         abstract = synthesis.get("abstract", "")
         sections = synthesis.get("sections", [])
-        
+
         # Simple LaTeX escape function
         def tex_escape(text):
             return text.replace('&', '\\&').replace('%', '\\%').replace('$', '\\$').replace('#', '\\#').replace('_', '\\_').replace('{', '\\{').replace('}', '\\}')
 
-        latex_template = r"""\documentclass[conference]{IEEEtran}
+        section_map = {
+            "INTRODUCTION": "",
+            "LITERATURE_REVIEW": "",
+            "METHODOLOGY": "",
+            "RESULTS": "",
+            "CONCLUSION": "",
+        }
+        for section in sections:
+            sec_title_raw = section.get("title", "")
+            sec_title = sec_title_raw.lower()
+            sec_content = tex_escape(section.get("content", ""))
+            if "intro" in sec_title:
+                section_map["INTRODUCTION"] = sec_content
+            elif "literature" in sec_title or "related" in sec_title:
+                section_map["LITERATURE_REVIEW"] = sec_content
+            elif "method" in sec_title:
+                section_map["METHODOLOGY"] = sec_content
+            elif "result" in sec_title or "discussion" in sec_title:
+                section_map["RESULTS"] = sec_content
+            elif "conclusion" in sec_title:
+                section_map["CONCLUSION"] = sec_content
+
+        template_path = Path("multi_agent/Latex_engine/templates/ieee_template.tex")
+        if template_path.exists():
+            template = template_path.read_text(encoding="utf-8")
+            latex_template = (
+                template
+                .replace("{{TITLE}}", tex_escape(title))
+                .replace("{{AUTHORS}}", "YuktiResearch AI Agent")
+                .replace("{{AFFILIATION}}", "Autonomous Research Division")
+                .replace("{{EMAIL}}", "research@yukti.local")
+                .replace("{{ABSTRACT}}", tex_escape(abstract))
+                .replace("{{KEYWORDS}}", "Academic Research, AI Synthesis, Autonomous Agents, Yukti AI")
+                .replace("{{INTRODUCTION}}", section_map["INTRODUCTION"])
+                .replace("{{LITERATURE_REVIEW}}", section_map["LITERATURE_REVIEW"])
+                .replace("{{METHODOLOGY}}", section_map["METHODOLOGY"])
+                .replace("{{RESULTS}}", section_map["RESULTS"])
+                .replace("{{CONCLUSION}}", section_map["CONCLUSION"])
+            )
+        else:
+            latex_template = r"""\documentclass[conference]{IEEEtran}
 \IEEEoverridecommandlockouts
 \usepackage{cite}
 \usepackage{amsmath,amssymb,amsfonts}
@@ -130,11 +214,11 @@ class PublisherAgent:
     T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
 \begin{document}
 
-\title{""" + tex_escape(title) + r"""}
+	itle{""" + tex_escape(title) + r"""}
 
 \author{\IEEEauthorblockN{YuktiResearch AI Agent}
 \IEEEauthorblockA{\textit{Autonomous Research Division} \\
-\textit{Dart Vadar Team}\\
+	extit{Dart Vadar Team}\\
 St. Joseph's College of Engineering \\
 Chennai, India}
 }
@@ -150,13 +234,13 @@ Academic Research, AI Synthesis, Autonomous Agents, Yukti AI
 \end{IEEEkeywords}
 
 """
-        # Add sections
-        for section in sections:
-            section_title = tex_escape(section.get("title", "Untitled Section"))
-            section_content = tex_escape(section.get("content", ""))
-            latex_template += f"\\section{{{section_title}}}\n{section_content}\n\n"
+            # Add sections if template file is missing
+            for section in sections:
+                section_title = tex_escape(section.get("title", "Untitled Section"))
+                section_content = tex_escape(section.get("content", ""))
+                latex_template += f"\\section{{{section_title}}}\n{section_content}\n\n"
 
-        latex_template += r"""
+            latex_template += r"""
 \section*{Acknowledgment}
 This research was generated autonomously by Yukti Research AI for Prince PROTOTHON'26.
 
@@ -166,6 +250,7 @@ This research was generated autonomously by Yukti Research AI for Prince PROTOTH
 
 \end{document}
 """
+
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(latex_template)
 

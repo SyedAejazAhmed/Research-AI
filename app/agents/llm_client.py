@@ -84,7 +84,7 @@ class OllamaClient:
         elif ram < 24:
             return "llama3.1:8b"
         else:
-            return "gemma2:9b"
+            return "gpt-oss:20b"
 
     async def initialize(self, auto_setup: bool = False) -> bool:
         """Initialize client and detect available models."""
@@ -264,7 +264,7 @@ class OllamaClient:
             "without LLM synthesis. Please install Ollama and a model to "
             "enable AI-powered report synthesis.\n\n"
             "Install Ollama: https://ollama.com\n"
-            "Then run: ollama pull llama3.2"
+            "Then run: ollama pull gpt-oss:20b"
         )
     
     @property

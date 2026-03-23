@@ -87,7 +87,7 @@ def main():
     print("🌐 Starting server at http://localhost:8000")
     try:
         import uvicorn
-        uvicorn.run("backend.server:app", host="0.0.0.0", port=8000, reload=True)
+        uvicorn.run("server.server:app", host="0.0.0.0", port=8000, reload=True)
     except KeyboardInterrupt:
         print("\n👋 Yukti Research AI stopped.")
     except Exception as e:

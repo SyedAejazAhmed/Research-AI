@@ -9,7 +9,7 @@ An autonomous AI system for logical & verified academic research.
 ## Prerequisites
 1. **Python 3.11+** installed
 2. **Ollama** installed (https://ollama.com)
-3. Run `ollama pull llama3.2` to get the default model
+3. Run `ollama pull gpt-oss:20b` to get the default model
 
 ## Steps to Run
 // turbo

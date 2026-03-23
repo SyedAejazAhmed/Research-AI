@@ -369,7 +369,28 @@ class WritingService:
 
     def _build_references_section(self, citations: Dict[str, Any]) -> str:
         """Build a plain LaTeX reference list from citations dict."""
+        if not isinstance(citations, dict):
+            return ""
+
         formatted = citations.get("formatted", [])
+
+        # Fallback: list entries with embedded formatted strings
+        if not formatted and isinstance(citations.get("citations"), list):
+            formatted = [
+                item.get("formatted") if isinstance(item, dict) else str(item)
+                for item in citations.get("citations", [])
+            ]
+            formatted = [x for x in formatted if x]
+
+        # Fallback: parse markdown/text block like "## References\n\n[1] ..."
+        if not formatted and isinstance(citations.get("formatted_text"), str):
+            formatted_text = citations.get("formatted_text", "")
+            formatted = [
+                line.strip()
+                for line in formatted_text.splitlines()
+                if re.match(r"^\[\d+\]\s+", line.strip())
+            ]
+
         if not formatted:
             return ""
 
