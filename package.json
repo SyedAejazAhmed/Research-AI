@@ -1,4 +1,9 @@
 {
+  "scripts": {
+    "test": "pytest -q tests",
+    "test:github": "pytest -q tests/test_github_agent.py",
+    "test:verbose": "pytest tests -v --tb=short"
+  },
   "dependencies": {
     "ogl": "^1.0.11",
     "three": "^0.183.1"
