@@ -31,11 +31,29 @@ function stripMd(text = '') {
     .trim();
 }
 
+function toRoman(n) {
+  const map = [
+    [1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'],
+    [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'],
+    [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I'],
+  ];
+  let x = n;
+  let out = '';
+  for (const [v, sym] of map) {
+    while (x >= v) {
+      out += sym;
+      x -= v;
+    }
+  }
+  return out;
+}
+
 export default function IEEEPreview({
   sections,       // [{key, title, content}]
   editValues,     // {[key]: string}
   activeKey,
   plan,           // {title, query, keywords}
+  query,
   approvedKeys,   // Set<string>
   sessionId,
 }) {
@@ -155,7 +173,7 @@ export default function IEEEPreview({
 
           {/* Body sections in two-column layout */}
           <div style={{ columnCount: 2, columnGap: '12px' }}>
-            {SECTION_ORDER.filter(k => k !== 'abstract').map((key, idx) => {
+            {SECTION_ORDER.filter(k => k !== 'abstract' && k !== 'references').map((key, idx) => {
               const sec = sections.find(s => s.key === key);
               if (!sec) return null;
               const content   = editValues?.[key] ?? sec.content;
@@ -172,7 +190,7 @@ export default function IEEEPreview({
                 >
                   <div style={{ fontSize: '9px', fontWeight: 'bold', marginBottom: '2px' }}>
                     {/* Roman numeral */}
-                    {['I', 'II', 'III', 'IV', 'V'][idx]}. {meta.label.toUpperCase()}
+                    {toRoman(idx + 1)}. {meta.label.toUpperCase()}
                     {approvedKeys.has(key) && (
                       <span className="ml-1 text-emerald-600">✓</span>
                     )}

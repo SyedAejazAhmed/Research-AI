@@ -21,6 +21,7 @@ from pydantic import BaseModel
 
 from app.orchestrator import ResearchOrchestrator
 from app.agents.llm_client import OllamaClient
+from app.utils.references import DEFAULT_LIMIT, DEFAULT_STYLE, generate_references, pyzotero_capabilities
 from .writing_service import WritingService
 
 # Setup logging
@@ -68,14 +69,6 @@ _assets_dir = STATIC_DIR / "assets"
 if _assets_dir.exists():
     app.mount("/assets", StaticFiles(directory=str(_assets_dir)), name="assets")
 
-@app.get("/")
-async def read_root():
-    """Serve the main index.html file."""
-    index_path = STATIC_DIR / "index.html"
-    if index_path.exists():
-        return FileResponse(index_path)
-    return {"message": "Yukti Research AI API is running. Frontend build not found."}
-
 # Initialize orchestrator
 orchestrator = ResearchOrchestrator(output_dir=str(OUTPUT_DIR))
 
@@ -96,6 +89,18 @@ chat_sessions: Dict[str, Dict] = {}
 class ResearchRequest(BaseModel):
     query: str
     citation_style: str = "APA"
+
+
+class ReferencesRequest(BaseModel):
+    query: str
+    limit: int = DEFAULT_LIMIT
+    style: str = DEFAULT_STYLE
+
+
+class ReferencesFormatsResponse(BaseModel):
+    available: bool
+    formats: List[str]
+    style_note: str
 
 class ChatMessage(BaseModel):
     session_id: str
@@ -227,6 +232,36 @@ async def setup_system():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/references/formats", response_model=ReferencesFormatsResponse)
+async def get_reference_formats():
+    """Expose pyzotero-supported export formats and style note."""
+    info = pyzotero_capabilities()
+    return ReferencesFormatsResponse(
+        available=bool(info.get("available", False)),
+        formats=list(info.get("formats", [])),
+        style_note=str(info.get("style_note", "")),
+    )
+
+
+@app.post("/api/references/generate")
+async def generate_reference_section(req: ReferencesRequest):
+    """Generate a reference section from scholarly web discovery + metadata enrichment."""
+    if not req.query.strip():
+        raise HTTPException(status_code=400, detail="Query is required")
+
+    if req.limit < 1 or req.limit > 100:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 100")
+
+    try:
+        result = generate_references(req.query.strip(), req.limit, req.style)
+        return {"status": "success", "data": result}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.error("Reference generation failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to generate references")
 
 
 @app.post("/api/research")

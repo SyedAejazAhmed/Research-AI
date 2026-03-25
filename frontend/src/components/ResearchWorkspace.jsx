@@ -23,6 +23,7 @@
  *   systemStatus, onOpenSystemModal
  */
 import { useState, useCallback } from 'react';
+import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Cpu, RefreshCw, Download, FileText, Activity, ChevronRight,
@@ -82,6 +83,19 @@ export default function ResearchWorkspace({
 
   // Left panel tab: 'sections' | 'pipeline' | 'chat'
   const [sideMode, setSideMode] = useState('sections');
+
+  // Keep references as a persistent editable section in the workspace.
+  useEffect(() => {
+    setSections(prev => {
+      if (prev.some(s => s.key === 'references')) return prev;
+      return [...prev, {
+        index: 999,
+        key: 'references',
+        title: 'References',
+        content: '',
+      }];
+    });
+  }, [setSections]);
 
   const setEditValue = useCallback((key, val) => {
     setEditValues(prev => ({ ...prev, [key]: val }));
@@ -297,6 +311,7 @@ export default function ResearchWorkspace({
           editValues={editValues}
           activeKey={activeKey}
           plan={plan}
+          query={query}
           approvedKeys={approvedKeys}
           sessionId={sessionId}
         />
