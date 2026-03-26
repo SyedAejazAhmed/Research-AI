@@ -29,7 +29,7 @@ export const SECTION_META = {
   methodology:       { label: 'Methodology',            icon: '③', min: 500,  max: 800,  ieee: '500–800 words'  },
   result_discussion: { label: 'Result & Discussion',    icon: '④', min: 800,  max: 1200, ieee: '800–1200 words' },
   conclusion:        { label: 'Conclusion',             icon: '⑤', min: 200,  max: 350,  ieee: '200–350 words'  },
-  references:        { label: 'References',             icon: '⑥', min: 120,  max: 600,  ieee: 'IEEE reference list' },
+  references:        { label: 'References',             icon: '⑥', min: 120,  max: 600,  ieee: 'IEEE/Harvard reference list' },
 };
 
 function wordCount(text = '') {

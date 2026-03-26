@@ -185,11 +185,8 @@ class WritingService:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.latex_agent = LaTeXWriterAgent()
-        # Always use the existing texlive-compiler:latest Docker image
-        self.compiler = LaTeXCompiler(
-            image_name="texlive-compiler:latest",
-            timeout=docker_timeout,
-        )
+        # Prefer local pdflatex when available; otherwise fall back to Docker.
+        self.compiler = LocalLaTeXCompiler(timeout=docker_timeout)
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -315,13 +312,15 @@ class WritingService:
 
         # Append references section if citations exist
         refs_latex = self._build_references_section(citations)
-        if refs_latex:
+        has_references_section = any(
+            (s.title or "").strip().lower() == "references" for s in sections
+        )
+        if refs_latex and not has_references_section:
             sections.append(
-                LaTeXSection(
+                agent.create_section(
                     title="References",
                     content=refs_latex,
                     level=1,
-                    label="sec:references",
                 )
             )
 

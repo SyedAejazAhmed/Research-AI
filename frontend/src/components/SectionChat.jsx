@@ -64,15 +64,32 @@ export default function SectionChat({
   onUnapprove,
   plan,
   abstractContent = '',
+  referenceStyle = 'IEEE',
+  onReferenceStyleChange,
+  referencesLoading = false,
+  referencesError = '',
 }) {
   const meta = SECTION_META[sectionKey] || {};
+  const isReferences = sectionKey === 'references';
+
+  const buildIntroMessage = () => {
+    if (isReferences) {
+      return `The **${meta.label || sectionKey}** section has been generated. Select citation style (**IEEE** or **Harvard**) and review the entries.
+
+• *"Use Harvard format"*
+• *"Keep only sources from 2020 onwards"*
+• *"Remove duplicate citations"*`;
+    }
+
+    return `The **${meta.label || sectionKey}** section has been generated. Review the content above and make any edits. You can also ask me to refine it — for example:\n\n• *"Make it more concise"*\n• *"Add more detail about methodology"*\n• *"Focus on recent works from 2020 onwards"*`;
+  };
 
   // Per-section chat thread
   const [chatMessages, setChatMessages] = useState([
     {
       role: 'assistant',
       content: section
-        ? `The **${meta.label || sectionKey}** section has been generated. Review the content above and make any edits. You can also ask me to refine it — for example:\n\n• *"Make it more concise"*\n• *"Add more detail about methodology"*\n• *"Focus on recent works from 2020 onwards"*`
+        ? buildIntroMessage()
         : `Waiting for the **${meta.label || sectionKey}** section to be generated…`,
     },
   ]);
@@ -86,10 +103,10 @@ export default function SectionChat({
     if (section && chatMessages.length === 1 && chatMessages[0].content.includes('Waiting')) {
       setChatMessages([{
         role: 'assistant',
-        content: `The **${meta.label || sectionKey}** section is ready ✓\n\nTartet: ${meta.ieee}. You can edit the text directly above or tell me how to refine it.`,
+        content: `The **${meta.label || sectionKey}** section is ready ✓\n\nTarget: ${meta.ieee}. You can edit the text directly above or tell me how to refine it.`,
       }]);
     }
-  }, [section]);
+  }, [section, chatMessages, meta.label, meta.ieee, sectionKey]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -171,10 +188,30 @@ export default function SectionChat({
           <FileText size={16} className="text-violet-400 shrink-0" />
           <div>
             <h2 className="text-sm font-bold text-white">{meta.label}</h2>
-            <div className="text-[9px] text-gray-500 uppercase tracking-widest">{meta.ieee}</div>
+            <div className="text-[9px] text-gray-500 uppercase tracking-widest">
+              {isReferences ? `${referenceStyle} reference list` : meta.ieee}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {isReferences && (
+            <>
+              <select
+                value={referenceStyle}
+                onChange={(e) => onReferenceStyleChange?.(e.target.value)}
+                disabled={referencesLoading || isApproved}
+                className="px-2 py-1 rounded-lg text-xs bg-gray-900 border border-gray-700 text-gray-200 focus:outline-none focus:border-violet-500/50 disabled:opacity-50"
+              >
+                <option value="IEEE">IEEE</option>
+                <option value="HARVARD">Harvard</option>
+              </select>
+              {referencesLoading && (
+                <span className="text-[10px] text-blue-400 flex items-center gap-1">
+                  <Loader2 size={11} className="animate-spin" /> generating
+                </span>
+              )}
+            </>
+          )}
           <WordCountBadge count={wc} min={meta.min} max={meta.max} />
           {isApproved ? (
             <button
@@ -196,6 +233,12 @@ export default function SectionChat({
 
       {/* ── Content + chat scroll area ────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-4">
+
+        {isReferences && referencesError && (
+          <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+            {referencesError}
+          </div>
+        )}
 
         {/* Editable section content block */}
         <div className="bg-gray-900 border border-gray-700 rounded-xl overflow-hidden">

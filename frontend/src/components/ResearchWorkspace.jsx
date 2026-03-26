@@ -12,7 +12,7 @@
  * │ sections │  ┌──────────────────────────────┐│                          │
  * │ list     │  │ editable section content      ││  [paper preview]         │
  * │ / status │  │ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─││                          │
- * │          │  │ chat messages                 ││  [Generate PDF btn]      │
+ * │          │  │ chat messages                 ││  [live IEEE layout]      │
  * │          │  └──────────────────────────────┘│                          │
  * │          │  [input bar]                      │                          │
  * └──────────┴──────────────────────────────────┴──────────────────────────┘
@@ -22,7 +22,7 @@
  *   agents, logs, report, messages, sendMessage, onNewResearch,
  *   systemStatus, onOpenSystemModal
  */
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -83,6 +83,10 @@ export default function ResearchWorkspace({
 
   // Left panel tab: 'sections' | 'pipeline' | 'chat'
   const [sideMode, setSideMode] = useState('sections');
+  const [referenceStyle, setReferenceStyle] = useState('IEEE');
+  const [referencesLoading, setReferencesLoading] = useState(false);
+  const [referencesError, setReferencesError] = useState('');
+  const lastReferencesKeyRef = useRef('');
 
   // Keep references as a persistent editable section in the workspace.
   useEffect(() => {
@@ -96,6 +100,54 @@ export default function ResearchWorkspace({
       }];
     });
   }, [setSections]);
+
+  const generateReferences = useCallback(async (style, force = false) => {
+    const refs = sections.find(s => s.key === 'references');
+    const queryText = (plan?.query || query || plan?.title || '').trim();
+    const styleUpper = (style || 'IEEE').toUpperCase();
+
+    if (!queryText) return;
+    if (!force && refs && (refs.content || '').trim()) return;
+
+    const cacheKey = `${queryText}::${styleUpper}::${force ? 'force' : 'auto'}`;
+    if (lastReferencesKeyRef.current === cacheKey) return;
+    lastReferencesKeyRef.current = cacheKey;
+
+    setReferencesLoading(true);
+    setReferencesError('');
+
+    try {
+      const res = await fetch('/api/references/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: queryText, style: styleUpper, limit: 24 }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.status !== 'success') {
+        throw new Error(data.detail || 'Failed to generate references');
+      }
+
+      const text = data?.data?.formatted_references || '';
+      setSections(prev => prev.map(s => (
+        s.key === 'references' ? { ...s, content: text } : s
+      )));
+    } catch (err) {
+      setReferencesError(err?.message || 'Failed to generate references');
+    } finally {
+      setReferencesLoading(false);
+    }
+  }, [sections, plan?.query, query, setSections]);
+
+  // Auto-generate references as soon as the references section exists and is empty.
+  useEffect(() => {
+    generateReferences(referenceStyle, false);
+  }, [referenceStyle, generateReferences]);
+
+  const handleReferenceStyleChange = useCallback((nextStyle) => {
+    setReferenceStyle(nextStyle);
+    lastReferencesKeyRef.current = '';
+    generateReferences(nextStyle, true);
+  }, [generateReferences]);
 
   const setEditValue = useCallback((key, val) => {
     setEditValues(prev => ({ ...prev, [key]: val }));
@@ -300,6 +352,10 @@ export default function ResearchWorkspace({
                 onUnapprove={() => handleUnapprove(activeKey)}
                 plan={plan}
                 abstractContent={abstractContent}
+                referenceStyle={referenceStyle}
+                onReferenceStyleChange={handleReferenceStyleChange}
+                referencesLoading={referencesLoading}
+                referencesError={referencesError}
               />
             </motion.div>
           </AnimatePresence>

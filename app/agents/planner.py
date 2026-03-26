@@ -78,6 +78,15 @@ Return JSON with this exact structure:
     "methodology": "Brief description of research approach",
     "expected_sources": ["ArXiv", "PubMed", "Semantic Scholar", "Web"]
 }}
+
+Use this section order exactly:
+1. References
+2. Abstract
+3. Introduction
+4. Related Studies
+5. Methodology
+6. Result and Discussion
+7. Conclusion
 """
                 response = await self.llm_client.generate(prompt, max_tokens=1024)
                 
@@ -136,39 +145,39 @@ Return JSON with this exact structure:
         """Generate default report sections."""
         return [
             {
-                "title": "Introduction",
-                "description": f"Background and context for {query}",
-                "research_focus": "Overview and definitions"
+                "title": "References",
+                "description": "Collect and verify scholarly references before drafting narrative sections",
+                "research_focus": "DOI-verified citations, source credibility, and citation coverage"
             },
             {
-                "title": "Literature Review",
+                "title": "Abstract",
+                "description": f"Concise summary of {query} including objective, method, findings, and significance",
+                "research_focus": "Research objective, methods, key findings"
+            },
+            {
+                "title": "Introduction",
+                "description": f"Background and context for {query}",
+                "research_focus": "Overview, motivation, and problem definition"
+            },
+            {
+                "title": "Related Studies",
                 "description": "Review of existing research and key findings",
                 "research_focus": "Academic papers and prior work"
             },
             {
-                "title": "Methodology & Approaches",
+                "title": "Methodology",
                 "description": "Current methods and techniques in the field",
                 "research_focus": "Technical approaches and frameworks"
             },
             {
-                "title": "Key Findings & Analysis",
+                "title": "Result and Discussion",
                 "description": "Major discoveries and their implications",
-                "research_focus": "Results and analysis"
-            },
-            {
-                "title": "Challenges & Limitations",
-                "description": "Current limitations and open problems",
-                "research_focus": "Gaps in research"
-            },
-            {
-                "title": "Future Directions",
-                "description": "Emerging trends and potential research paths",
-                "research_focus": "Future work and predictions"
+                "research_focus": "Results and analytical interpretation"
             },
             {
                 "title": "Conclusion",
                 "description": "Summary of key insights and recommendations",
-                "research_focus": "Synthesis and takeaways"
+                "research_focus": "Synthesis, limitations, and takeaways"
             }
         ]
     

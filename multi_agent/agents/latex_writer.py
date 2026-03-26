@@ -438,7 +438,7 @@ class LaTeXWriterAgent(BaseAgent):
         
         # Sections
         for section in doc.sections:
-            latex += self.create_section(section.title, section.content, section.level)
+            latex += section.to_latex()
             latex += "\n"
         
         # Bibliography

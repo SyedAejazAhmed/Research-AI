@@ -8,12 +8,10 @@
  *  - IEEE two-column paper look (simulated with CSS)
  *  - Title / Author / Abstract / numbered sections
  *  - Active section highlighted with violet ring
- *  - "Generate PDF" button at bottom
  *  - Word-count summary
  */
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Download, Loader2, Eye, EyeOff } from 'lucide-react';
+import { Download, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { SECTION_ORDER, SECTION_META } from './SectionSidebar';
 
 function wordCount(text = '') {
@@ -53,13 +51,12 @@ export default function IEEEPreview({
   editValues,     // {[key]: string}
   activeKey,
   plan,           // {title, query, keywords}
-  query,
   approvedKeys,   // Set<string>
   sessionId,
 }) {
+  const [collapsed, setCollapsed] = useState(false);
   const [compiling, setCompiling] = useState(false);
   const [compileResult, setCompileResult] = useState(null);
-  const [collapsed, setCollapsed] = useState(false);
 
   const paperTitle  = plan?.title || plan?.query || 'Research Paper';
   const paperDate   = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
@@ -74,7 +71,7 @@ export default function IEEEPreview({
         const sec = sections.find(s => s.key === k);
         if (!sec) return null;
         return {
-          title:   SECTION_META[k]?.label || k,
+          title: SECTION_META[k]?.label || k,
           content: editValues?.[k] ?? sec.content,
         };
       })
@@ -87,14 +84,14 @@ export default function IEEEPreview({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title:       paperTitle,
-          abstract:    abstractText,
-          sections:    bodySections,
-          citations:   {},
+          title: paperTitle,
+          abstract: abstractText,
+          sections: bodySections,
+          citations: {},
           compile_pdf: true,
-          template:    'article',
-          author:      'Yukti Research AI',
-          session_id:  sessionId || '',
+          template: 'article',
+          author: 'Yukti Research AI',
+          session_id: sessionId || '',
         }),
       });
       const data = await res.json();
@@ -207,10 +204,33 @@ export default function IEEEPreview({
               );
             })}
           </div>
+
+          {/* References preview */}
+          {(() => {
+            const refSec = sections.find(s => s.key === 'references');
+            if (!refSec) return null;
+            const refContent = (editValues?.references ?? refSec.content ?? '').trim();
+            if (!refContent) return null;
+
+            return (
+              <div className={`mt-3 rounded transition-all ${activeKey === 'references' ? 'ring-2 ring-violet-400 ring-offset-1 ring-offset-white' : ''}`}>
+                <div style={{ fontSize: '9px', fontWeight: 'bold', marginBottom: '4px' }}>
+                  REFERENCES
+                  {approvedKeys.has('references') && (
+                    <span className="ml-1 text-emerald-600">✓</span>
+                  )}
+                </div>
+                <pre style={{ fontSize: '8px', lineHeight: '1.35', whiteSpace: 'pre-wrap', fontFamily: '"Times New Roman", serif' }}>
+                  {stripMd(refContent).slice(0, 1400)}
+                  {refContent.length > 1400 ? '\n…' : ''}
+                </pre>
+              </div>
+            );
+          })()}
         </div>
       </div>
 
-      {/* ── Generate PDF button ────────────────────────────────────────── */}
+      {/* Generate PDF */}
       <div className="shrink-0 px-4 py-3 border-t border-gray-800 flex flex-col gap-2">
         <button
           onClick={handleGeneratePDF}
@@ -218,43 +238,31 @@ export default function IEEEPreview({
           className="w-full py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
         >
           {compiling
-            ? <><Loader2 size={13} className="animate-spin" /> Compiling…</>
+            ? <><Loader2 size={13} className="animate-spin" /> Compiling...</>
             : <><Download size={13} /> Generate IEEE PDF</>}
         </button>
 
-        <AnimatePresence>
-          {compileResult && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="overflow-hidden"
-            >
-              {compileResult.error ? (
-                <p className="text-xs text-red-400">{compileResult.error}</p>
-              ) : (
-                <div className="flex gap-2 flex-wrap">
-                  {compileResult.download_tex && (
-                    <a href={compileResult.download_tex} target="_blank" rel="noreferrer"
-                      className="flex-1 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-[10px] text-center transition-colors">
-                      .tex
-                    </a>
-                  )}
-                  {compileResult.download_pdf && (
-                    <a href={compileResult.download_pdf} target="_blank" rel="noreferrer"
-                      className="flex-1 py-1.5 rounded-lg bg-indigo-700 hover:bg-indigo-600 text-white text-[10px] text-center font-bold transition-colors">
-                      ⬇ PDF
-                    </a>
-                  )}
-                  {!compileResult.download_pdf && (
-                    <span className="text-[10px] text-yellow-500">LaTeX ready, PDF skipped</span>
-                  )}
-                </div>
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {compileResult?.error && (
+          <p className="text-xs text-red-400">{compileResult.error}</p>
+        )}
+        {!compileResult?.error && compileResult?.status === 'success' && (
+          <div className="flex gap-2 flex-wrap">
+            {compileResult.download_tex && (
+              <a href={compileResult.download_tex} target="_blank" rel="noreferrer"
+                className="flex-1 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-[10px] text-center transition-colors">
+                .tex
+              </a>
+            )}
+            {compileResult.download_pdf && (
+              <a href={compileResult.download_pdf} target="_blank" rel="noreferrer"
+                className="flex-1 py-1.5 rounded-lg bg-indigo-700 hover:bg-indigo-600 text-white text-[10px] text-center font-bold transition-colors">
+                PDF
+              </a>
+            )}
+          </div>
+        )}
       </div>
+
     </div>
   );
 }
