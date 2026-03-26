@@ -170,14 +170,17 @@ class LaTeXCompiler:
         result = subprocess.run(
             docker_cmd,
             capture_output=True,
-            text=True,
+            text=False,
             timeout=self.timeout,
             cwd=workspace_path
         )
+
+        stdout = result.stdout.decode("utf-8", errors="replace") if isinstance(result.stdout, (bytes, bytearray)) else str(result.stdout)
+        stderr = result.stderr.decode("utf-8", errors="replace") if isinstance(result.stderr, (bytes, bytearray)) else str(result.stderr)
         
         return {
-            "stdout": result.stdout,
-            "stderr": result.stderr,
+            "stdout": stdout,
+            "stderr": stderr,
             "returncode": result.returncode
         }
     

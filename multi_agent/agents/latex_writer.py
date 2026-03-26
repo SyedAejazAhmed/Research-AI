@@ -34,6 +34,9 @@ class LaTeXSection:
         """Render section to LaTeX."""
         commands = {1: 'section', 2: 'subsection', 3: 'subsubsection'}
         cmd = commands.get(self.level, 'section')
+        safe_title = self.title
+        for src, dst in [("&", r"\&"), ("%", r"\%"), ("#", r"\#"), ("_", r"\_")]:
+            safe_title = safe_title.replace(src, dst)
         label_str = ""
         if self.label:
             label_str = f"\\label{{{self.label}}}"
@@ -42,7 +45,7 @@ class LaTeXSection:
             safe_label = re.sub(r'[^a-zA-Z0-9]', '', self.title.lower())
             label_str = f"\\label{{sec:{safe_label}}}"
         
-        return f"\\{cmd}{{{self.title}}}{label_str}\n\n{self.content}\n"
+        return f"\\{cmd}{{{safe_title}}}{label_str}\n\n{self.content}\n"
 
 
 @dataclass
@@ -135,7 +138,7 @@ class LaTeXWriterAgent(BaseAgent):
         latex = re.sub(r'\*\*(.+?)\*\*', r'\\textbf{\1}', latex)
         latex = re.sub(r'\*(.+?)\*', r'\\textit{\1}', latex)
         latex = re.sub(r'__(.+?)__', r'\\textbf{\1}', latex)
-        latex = re.sub(r'_(.+?)_', r'\\textit{\1}', latex)
+        # Do not use underscore-based italics because it corrupts DOIs/URLs like 10.1007/..._47
         
         # Code
         latex = re.sub(r'```(\w*)\n(.*?)```', r'\\begin{verbatim}\n\2\\end{verbatim}', latex, flags=re.DOTALL)
@@ -190,7 +193,7 @@ class LaTeXWriterAgent(BaseAgent):
         
         # Escape special characters (that aren't already LaTeX commands)
         # Be careful not to escape existing LaTeX
-        for char in ['%', '&', '#']:
+        for char in ['%', '&', '#', '_']:
             latex = re.sub(r'(?<!\\)' + re.escape(char), '\\' + char, latex)
         
         return latex

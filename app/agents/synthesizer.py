@@ -80,6 +80,15 @@ SECTION_WORD_TARGETS = {
     "conclusion": "200-350",
 }
 
+SECTION_WORD_BOUNDS = {
+    "abstract": (150, 250),
+    "introduction": (400, 600),
+    "related_studies": (600, 900),
+    "methodology": (500, 800),
+    "result_discussion": (800, 1200),
+    "conclusion": (200, 350),
+}
+
 
 class SynthesizerAgent:
     """
@@ -150,6 +159,13 @@ class SynthesizerAgent:
         # 2) Abstract
         abstract = await self._generate_abstract(plan, aggregated_data)
         abstract = self._sanitize_generated_text(abstract, "abstract", plan, unified_context)
+        abstract = await self._enforce_word_target(
+            section_key="abstract",
+            section_title="Abstract",
+            text=abstract,
+            plan=plan,
+            unified_context=unified_context,
+        )
         abstract_section = {"index": -1, "key": "abstract", "title": "Abstract", "content": abstract}
         if callback:
             await self._safe_callback(callback, "synthesizer", "section_ready",
@@ -160,6 +176,13 @@ class SynthesizerAgent:
         for i, section_def in enumerate(ACADEMIC_SECTIONS):
             content = await self._generate_section(section_def, plan, unified_context)
             content = self._sanitize_generated_text(content, section_def["key"], plan, unified_context)
+            content = await self._enforce_word_target(
+                section_key=section_def["key"],
+                section_title=section_def["title"],
+                text=content,
+                plan=plan,
+                unified_context=unified_context,
+            )
             section = {
                 "index": i,
                 "key": section_def["key"],
@@ -197,6 +220,8 @@ class SynthesizerAgent:
 
     async def _generate_abstract(self, plan: Dict, data: Dict) -> str:
         if self.llm_client and self.llm_client.is_available:
+            min_w, max_w = SECTION_WORD_BOUNDS["abstract"]
+            target_w = self._target_words("abstract")
             prompt = f"""Write a concise academic abstract (150–250 words) for a research paper on:
 
 Title: {plan.get('title', '')}
@@ -205,8 +230,14 @@ Total Sources: {data.get('total_sources', 0)}
 Academic Sources: {data.get('academic_sources', 0)}
 
 State the objective, methodology, key findings, and significance.
-Academic third-person tone. Do NOT include headers or labels."""
-            return await self.llm_client.generate(prompt, max_tokens=400)
+Academic third-person tone. Do NOT include headers or labels.
+
+Length rule: target approximately {target_w} words (acceptable range: {min_w}-{max_w})."""
+            return await self.llm_client.generate(
+                prompt,
+                temperature=0.25,
+                max_tokens=self._token_budget(max_w),
+            )
 
         return (
             f"This paper presents a comprehensive analysis of {plan.get('title', 'the research topic')}. "
@@ -226,6 +257,8 @@ Academic third-person tone. Do NOT include headers or labels."""
     ) -> str:
         if self.llm_client and self.llm_client.is_available:
             target = SECTION_WORD_TARGETS.get(section_def["key"], "250-450")
+            min_w, max_w = SECTION_WORD_BOUNDS.get(section_def["key"], (250, 450))
+            target_w = self._target_words(section_def["key"])
             prompt = f"""Write the "{section_def['title']}" section for an academic research paper.
 
 Research Topic: {plan.get('title', '')}
@@ -237,12 +270,17 @@ Available Source Material:
 {unified_context[:3000] if unified_context else 'No specific sources available.'}
 
 Rules:
-1. Write {target} words in academic prose
+1. Write {target} words in academic prose (target approximately {target_w} words)
 2. Use [number] citation format where applicable
 3. Objective, scholarly tone — no first-person
 4. Do NOT include the section title (added separately)
-5. Only reference provided sources — never fabricate citations"""
-            return await self.llm_client.generate(prompt, max_tokens=600)
+5. Only reference provided sources — never fabricate citations
+6. Stay within {min_w}-{max_w} words"""
+            return await self.llm_client.generate(
+                prompt,
+                temperature=0.25,
+                max_tokens=self._token_budget(max_w),
+            )
 
         return self._fallback_section_content(section_def, plan, unified_context)
 
@@ -288,6 +326,80 @@ Rules:
         if context_hint:
             base += " Source-grounded context from the collected literature is incorporated to preserve factual alignment and domain relevance."
         return base
+
+    @staticmethod
+    def _word_count(text: str) -> int:
+        t = (text or "").strip()
+        return len(t.split()) if t else 0
+
+    @staticmethod
+    def _token_budget(max_words: int) -> int:
+        # 1 word is usually >1 token for academic prose, so reserve headroom.
+        return max(320, min(2800, int(max_words * 2.2)))
+
+    @staticmethod
+    def _target_words(section_key: str) -> int:
+        min_w, max_w = SECTION_WORD_BOUNDS.get(section_key, (250, 450))
+        return int((min_w + max_w) / 2)
+
+    async def _enforce_word_target(
+        self,
+        section_key: str,
+        section_title: str,
+        text: str,
+        plan: Dict,
+        unified_context: str,
+    ) -> str:
+        """Keep output near configured section length via a single LLM rewrite pass."""
+        min_w, max_w = SECTION_WORD_BOUNDS.get(section_key, (250, 450))
+        current = self._word_count(text)
+        if min_w <= current <= max_w:
+            return text
+
+        if not (self.llm_client and self.llm_client.is_available):
+            return text
+
+        action = "expand" if current < min_w else "compress"
+        target_w = self._target_words(section_key)
+        prompt = f"""Rewrite the following section to {action} it while preserving meaning, factual grounding, and citation anchors.
+
+Section: {section_title}
+Paper Title: {plan.get('title', '')}
+Current length: {current} words
+Required range: {min_w}-{max_w} words
+Target length: around {target_w} words
+
+Constraints:
+1. Keep objective academic tone
+2. Do not invent new facts beyond the supplied context
+3. Preserve citation markers like [1], [2] when present
+4. Output only the revised section text (no notes)
+
+Context:
+{unified_context[:1800] if unified_context else 'No additional context available.'}
+
+Original section:
+{text}
+"""
+
+        try:
+            revised = await self.llm_client.generate(
+                prompt,
+                temperature=0.2,
+                max_tokens=self._token_budget(max_w),
+            )
+            revised = (revised or "").strip()
+            if not revised:
+                return text
+            revised_wc = self._word_count(revised)
+            # Accept if moved into range or significantly closer to target.
+            old_gap = abs(current - target_w)
+            new_gap = abs(revised_wc - target_w)
+            if (min_w <= revised_wc <= max_w) or (new_gap + 20 < old_gap):
+                return revised
+            return text
+        except Exception:
+            return text
 
     @staticmethod
     def _extract_references_content(citations_text: str) -> str:

@@ -38,6 +38,16 @@ function wordCount(text = '') {
   return text.trim() ? text.trim().split(/\s+/).length : 0;
 }
 
+function referenceCount(text = '') {
+  const t = (text || '').trim();
+  if (!t) return 0;
+
+  const bracketed = t.match(/^\[(\d+)\]/gm);
+  if (bracketed?.length) return bracketed.length;
+
+  return t.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean).length;
+}
+
 function WordCountBadge({ count, min, max }) {
   const ok  = count >= min && count <= max;
   const low = count < min;
@@ -48,6 +58,20 @@ function WordCountBadge({ count, min, max }) {
             'bg-red-500/10 text-red-400 border-red-500/30'
     }`}>
       {count} / {max} words
+    </span>
+  );
+}
+
+function ReferenceCountBadge({ count, min, max }) {
+  const ok = count >= min && count <= max;
+  const low = count < min;
+  return (
+    <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${
+      ok ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' :
+      low ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30' :
+            'bg-red-500/10 text-red-400 border-red-500/30'
+    }`}>
+      {count} / {max} references
     </span>
   );
 }
@@ -165,6 +189,7 @@ export default function SectionChat({
   }
 
   const wc = wordCount(editValue ?? section?.content ?? '');
+  const rc = referenceCount(editValue ?? section?.content ?? '');
 
   // ── Not yet generated ──────────────────────────────────────────────────
   if (!section) {
@@ -212,7 +237,11 @@ export default function SectionChat({
               )}
             </>
           )}
-          <WordCountBadge count={wc} min={meta.min} max={meta.max} />
+          {isReferences ? (
+            <ReferenceCountBadge count={rc} min={meta.minRefs || 24} max={meta.maxRefs || 30} />
+          ) : (
+            <WordCountBadge count={wc} min={meta.min} max={meta.max} />
+          )}
           {isApproved ? (
             <button
               onClick={onUnapprove}

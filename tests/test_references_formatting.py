@@ -10,7 +10,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.utils.references import ReferenceItem, format_references
+from app.utils.references import DEFAULT_LIMIT, ReferenceItem, format_references
+
+
+def test_default_reference_limit_is_30():
+    assert DEFAULT_LIMIT == 30
 
 
 def _sample_items():

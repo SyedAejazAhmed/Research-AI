@@ -10,6 +10,7 @@ Pipeline:
 """
 
 import logging
+import html
 import os
 import re
 import shutil
@@ -226,6 +227,7 @@ class WritingService:
         )
 
         tex_content = self.latex_agent.assemble_document(doc)
+        tex_content = self._normalize_latex_text(tex_content)
 
         # Write .tex file
         tex_path = self.output_dir / f"{session_id}_report.tex"
@@ -265,8 +267,7 @@ class WritingService:
 
                 if compile_result.get("pdf_path") and Path(compile_result["pdf_path"]).exists():
                     pdf_dest = self.output_dir / f"{session_id}_report.pdf"
-                    import shutil
-                    shutil.copy(compile_result["pdf_path"], str(pdf_dest))
+                    self._safe_replace_file(compile_result["pdf_path"], str(pdf_dest))
                     result["pdf_path"] = str(pdf_dest)
                     logger.info(f"[WritingService] .pdf saved → {pdf_dest}")
                 else:
@@ -401,3 +402,52 @@ class WritingService:
         for src, dst in replacements:
             text = text.replace(src, dst)
         return text
+
+    @staticmethod
+    def _normalize_latex_text(text: str) -> str:
+        """Normalize problematic Unicode/entities that can break pdflatex."""
+        if not text:
+            return ""
+
+        normalized = html.unescape(text)
+        replacements = {
+            "\u00a0": " ",      # non-breaking space
+            "\u202f": " ",      # narrow non-breaking space
+            "\u2011": "-",      # non-breaking hyphen
+            "\u2013": "-",      # en dash
+            "\u2014": "--",     # em dash
+            "\u2018": "'",
+            "\u2019": "'",
+            "\u201c": '"',
+            "\u201d": '"',
+            "\u03b1": "alpha",  # Greek alpha
+            "\u03b2": "beta",
+            "\u03b3": "gamma",
+            "\u03bb": "lambda",
+            "\u03bc": "mu",
+            "\u03c3": "sigma",
+            "\ufeff": "",       # BOM
+        }
+        for src, dst in replacements.items():
+            normalized = normalized.replace(src, dst)
+        return normalized
+
+    @staticmethod
+    def _safe_replace_file(src_path: str, dst_path: str) -> None:
+        """Atomically replace destination file, even if an older file is read-only."""
+        src = Path(src_path)
+        dst = Path(dst_path)
+        tmp_dst = dst.with_suffix(dst.suffix + ".tmp")
+
+        if tmp_dst.exists():
+            tmp_dst.unlink(missing_ok=True)
+
+        shutil.copy2(str(src), str(tmp_dst))
+
+        try:
+            os.replace(str(tmp_dst), str(dst))
+        except PermissionError:
+            # If a stale file exists with restrictive mode/ownership, remove it and retry.
+            if dst.exists():
+                dst.unlink(missing_ok=True)
+            os.replace(str(tmp_dst), str(dst))

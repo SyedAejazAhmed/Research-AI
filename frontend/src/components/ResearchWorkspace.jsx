@@ -120,7 +120,7 @@ export default function ResearchWorkspace({
       const res = await fetch('/api/references/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: queryText, style: styleUpper, limit: 24 }),
+        body: JSON.stringify({ query: queryText, style: styleUpper, limit: 30 }),
       });
       const data = await res.json();
       if (!res.ok || data.status !== 'success') {

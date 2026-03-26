@@ -29,11 +29,21 @@ export const SECTION_META = {
   methodology:       { label: 'Methodology',            icon: '③', min: 500,  max: 800,  ieee: '500–800 words'  },
   result_discussion: { label: 'Result & Discussion',    icon: '④', min: 800,  max: 1200, ieee: '800–1200 words' },
   conclusion:        { label: 'Conclusion',             icon: '⑤', min: 200,  max: 350,  ieee: '200–350 words'  },
-  references:        { label: 'References',             icon: '⑥', min: 120,  max: 600,  ieee: 'IEEE/Harvard reference list' },
+  references:        { label: 'References',             icon: '⑥', minRefs: 24, maxRefs: 30, ieee: 'IEEE/Harvard references (target 30)' },
 };
 
 function wordCount(text = '') {
   return text.trim() ? text.trim().split(/\s+/).length : 0;
+}
+
+function referenceCount(text = '') {
+  const t = (text || '').trim();
+  if (!t) return 0;
+
+  const bracketed = t.match(/^\[(\d+)\]/gm);
+  if (bracketed?.length) return bracketed.length;
+
+  return t.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean).length;
 }
 
 function WordBar({ count, min, max }) {
@@ -52,6 +62,27 @@ function WordBar({ count, min, max }) {
       </div>
       <div className={`text-[10px] mt-0.5 font-mono ${ok ? 'text-emerald-500' : 'text-gray-500'}`}>
         {count} / {max}
+      </div>
+    </div>
+  );
+}
+
+function ReferenceBar({ count, min, max }) {
+  const pct = Math.min(100, Math.round((count / max) * 100));
+  const ok = count >= min && count <= max;
+  const low = count < min;
+  return (
+    <div className="mt-1.5">
+      <div className="h-1 w-full bg-gray-800 rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all duration-500 ${
+            ok ? 'bg-emerald-500' : low ? 'bg-yellow-500' : 'bg-red-500'
+          }`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <div className={`text-[10px] mt-0.5 font-mono ${ok ? 'text-emerald-500' : 'text-gray-500'}`}>
+        {count} / {max} references
       </div>
     </div>
   );
@@ -97,6 +128,7 @@ export default function SectionSidebar({
           // Use edited value if present, else original
           const displayContent = editValues?.[key] ?? secData?.content ?? '';
           const wc = wordCount(displayContent);
+          const rc = referenceCount(displayContent);
 
           return (
             <motion.button
@@ -137,9 +169,12 @@ export default function SectionSidebar({
                   </div>
                   <div className="text-[9px] text-gray-600 mt-0.5">{meta.ieee}</div>
 
-                  {/* Word progress bar */}
-                  {isReady && (
+                  {isReady && key !== 'references' && (
                     <WordBar count={wc} min={meta.min} max={meta.max} />
+                  )}
+
+                  {isReady && key === 'references' && (
+                    <ReferenceBar count={rc} min={meta.minRefs} max={meta.maxRefs} />
                   )}
                 </div>
               </div>

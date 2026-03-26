@@ -26,7 +26,7 @@ except Exception:
 DDG_JINA_MIRROR = "https://r.jina.ai/http://duckduckgo.com/html/"
 SEMANTIC_SCHOLAR_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
 CROSSREF_URL = "https://api.crossref.org/works"
-DEFAULT_LIMIT = 24
+DEFAULT_LIMIT = 30
 DEFAULT_STYLE = "IEEE"
 
 SCHOLARLY_DOMAINS = [
