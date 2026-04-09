@@ -80,13 +80,13 @@ Return JSON with this exact structure:
 }}
 
 Use this section order exactly:
-1. References
-2. Abstract
-3. Introduction
-4. Related Studies
-5. Methodology
-6. Result and Discussion
-7. Conclusion
+1. Abstract
+2. Introduction
+3. Related Studies
+4. Methodology
+5. Result and Discussion
+6. Conclusion
+7. References
 """
                 response = await self.llm_client.generate(prompt, max_tokens=1024)
                 
@@ -145,11 +145,6 @@ Use this section order exactly:
         """Generate default report sections."""
         return [
             {
-                "title": "References",
-                "description": "Collect and verify scholarly references before drafting narrative sections",
-                "research_focus": "DOI-verified citations, source credibility, and citation coverage"
-            },
-            {
                 "title": "Abstract",
                 "description": f"Concise summary of {query} including objective, method, findings, and significance",
                 "research_focus": "Research objective, methods, key findings"
@@ -178,6 +173,11 @@ Use this section order exactly:
                 "title": "Conclusion",
                 "description": "Summary of key insights and recommendations",
                 "research_focus": "Synthesis, limitations, and takeaways"
+            },
+            {
+                "title": "References",
+                "description": "Curated scholarly references supporting the paper",
+                "research_focus": "IEEE/Harvard-ready citations, source credibility, and citation coverage"
             }
         ]
     

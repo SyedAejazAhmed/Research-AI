@@ -328,8 +328,8 @@ async def test_execute_full_pipeline_mocked(tmp_path: Path):
             return "httpx\nfastapi\n"
         return None
 
-    with _patch("multi_agents.agents.github_agent._get_json", side_effect=fake_get_json), \
-         _patch("multi_agents.agents.github_agent._get_raw", side_effect=fake_get_raw), \
+    with _patch("multi_agent.agents.github_agent._get_json", side_effect=fake_get_json), \
+         _patch("multi_agent.agents.github_agent._get_raw", side_effect=fake_get_raw), \
          _patch("app.agents.llm_client.OllamaClient", return_value=fake_ollama):
 
         cfg = GithubAgentConfig(

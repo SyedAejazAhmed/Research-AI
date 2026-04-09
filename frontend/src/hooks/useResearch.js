@@ -38,7 +38,7 @@ export const useResearch = () => {
             ws.send(JSON.stringify({
                 action: 'research',
                 query,
-                citation_style: 'APA'
+                citation_style: 'IEEE'
             }));
             setStatus('planning');
         };
@@ -82,7 +82,9 @@ export const useResearch = () => {
                     if (sec) {
                         setSections(prev => {
                             const already = prev.find(s => s.key === sec.key);
-                            if (already) return prev;
+                            if (already) {
+                                return prev.map(s => s.key === sec.key ? { ...s, ...sec } : s);
+                            }
                             return [...prev, sec];
                         });
                     }

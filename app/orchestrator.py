@@ -10,6 +10,7 @@ import asyncio
 import logging
 import uuid
 import json
+import re
 from typing import Dict, Any, Optional, Callable
 from datetime import datetime
 from pathlib import Path
@@ -25,6 +26,7 @@ from app.agents.aggregator import ContentAggregator
 from app.agents.synthesizer import SynthesizerAgent
 from app.agents.publisher import PublisherAgent
 from app.agents.llm_client import OllamaClient
+from app.utils.references import generate_references
 
 logger = logging.getLogger(__name__)
 
@@ -177,15 +179,20 @@ class ResearchOrchestrator:
             # Step 3: Process & Aggregate
             # ========================================
             if callback:
-                await callback("orchestrator", "step", "Step 3/5: Processing & aggregating results...")
+                await callback("orchestrator", "step", "Step 3/5: Curating 30 references and aggregating evidence...")
             
             # Process documents
             all_research = academic_results.get("results", []) + web_results.get("results", [])
             processed = await self.doc_processor.process(all_research, query, callback)
             
-            # Generate citations
+            # Generate citations (target: 30 formatted scholarly references first)
             academic_papers = [r for r in academic_results.get("results", []) if r.get("type") == "academic_paper"]
-            citations = await self.citation_agent.generate_citations(academic_papers, citation_style, callback)
+            citations = await self._build_targeted_citations(
+                query=query,
+                academic_papers=academic_papers,
+                citation_style=citation_style,
+                callback=callback,
+            )
             
             # Aggregate everything
             aggregated = await self.aggregator.aggregate(
@@ -277,6 +284,172 @@ class ResearchOrchestrator:
                 "data": data,
                 "timestamp": datetime.now().isoformat()
             })
+
+    async def _build_targeted_citations(
+        self,
+        query: str,
+        academic_papers: list,
+        citation_style: str,
+        callback: Optional[Callable] = None,
+    ) -> Dict[str, Any]:
+        """Build citation output with a 30-reference target before synthesis."""
+        if callback:
+            await callback(
+                "citation_agent",
+                "searching",
+                "Curating up to 30 scholarly references in the selected format...",
+            )
+
+        service_citations: Dict[str, Any] = {}
+        try:
+            reference_pack = await asyncio.to_thread(
+                generate_references,
+                query,
+                30,
+                citation_style,
+            )
+            service_citations = self._citations_from_reference_pack(reference_pack, citation_style)
+            if callback:
+                await callback(
+                    "citation_agent",
+                    "completed",
+                    f"Reference curation complete: {service_citations.get('total', 0)} references.",
+                )
+        except Exception as exc:
+            logger.warning("Reference curation via generate_references failed: %s", exc)
+
+        if service_citations.get("total", 0) >= 30:
+            return service_citations
+
+        fallback_citations = await self.citation_agent.generate_citations(
+            academic_papers,
+            citation_style,
+            callback,
+        )
+
+        if not service_citations.get("total", 0):
+            return fallback_citations
+
+        return self._merge_citation_results(service_citations, fallback_citations, target=30)
+
+    @staticmethod
+    def _citations_from_reference_pack(reference_pack: Dict[str, Any], citation_style: str) -> Dict[str, Any]:
+        """Convert app.utils.references payload into orchestrator citation shape."""
+        papers = reference_pack.get("papers", []) or []
+        formatted = (reference_pack.get("formatted_references") or "").strip()
+        blocks = [b.strip() for b in re.split(r"\n\s*\n", formatted) if b.strip()]
+
+        citations = []
+        verified = 0
+        for idx, block in enumerate(blocks, start=1):
+            paper = papers[idx - 1] if idx - 1 < len(papers) else {}
+            doi = str(paper.get("DOI", "")).strip()
+            if doi:
+                verified += 1
+
+            creators = paper.get("creators", []) or []
+            authors = []
+            for creator in creators:
+                if creator.get("name"):
+                    authors.append(str(creator.get("name", "")).strip())
+                    continue
+                first = str(creator.get("firstName", "")).strip()
+                last = str(creator.get("lastName", "")).strip()
+                full = f"{first} {last}".strip()
+                if full:
+                    authors.append(full)
+
+            date_text = str(paper.get("date", ""))
+            year_match = re.search(r"\b(19|20)\d{2}\b", date_text)
+            year = year_match.group(0) if year_match else ""
+
+            citations.append(
+                {
+                    "number": idx,
+                    "formatted": block,
+                    "doi": doi,
+                    "verified": bool(doi),
+                    "paper": {
+                        "title": str(paper.get("title", "Untitled")),
+                        "authors": authors,
+                        "abstract": str(paper.get("abstractNote", "")),
+                        "year": year,
+                        "url": str(paper.get("url", "")),
+                        "doi": doi,
+                        "source": str(paper.get("publicationTitle", "")),
+                        "type": "academic_paper",
+                    },
+                }
+            )
+
+        formatted_text = "## References\n\n" + "\n\n".join(c["formatted"] for c in citations)
+        if not citations:
+            formatted_text = "## References\n\nNo references found."
+
+        return {
+            "agent": "Reference Service",
+            "citations": citations,
+            "total": len(citations),
+            "verified": verified,
+            "style": citation_style,
+            "formatted_text": formatted_text,
+            "timestamp": datetime.now().isoformat(),
+        }
+
+    @staticmethod
+    def _citation_identity(cite: Dict[str, Any]) -> str:
+        paper = cite.get("paper", {}) or {}
+        doi = str(cite.get("doi") or paper.get("doi") or "").strip().lower()
+        if doi:
+            return f"doi:{doi}"
+        title = str(paper.get("title", "")).strip().lower()
+        normalized_title = re.sub(r"[^a-z0-9\s]", "", title)
+        return f"title:{normalized_title}"
+
+    @staticmethod
+    def _renumber_reference_text(text: str, number: int) -> str:
+        stripped = (text or "").strip()
+        stripped = re.sub(r"^(\[\d+\]|\d+\.)\s*", "", stripped)
+        return f"[{number}] {stripped}" if stripped else f"[{number}]"
+
+    def _merge_citation_results(
+        self,
+        primary: Dict[str, Any],
+        secondary: Dict[str, Any],
+        target: int = 30,
+    ) -> Dict[str, Any]:
+        """Merge two citation payloads, preserving primary ordering and deduplicating."""
+        merged = []
+        seen = set()
+
+        for source in (primary.get("citations", []) or [], secondary.get("citations", []) or []):
+            identity = self._citation_identity(source)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            merged.append(dict(source))
+            if len(merged) >= target:
+                break
+
+        for idx, cite in enumerate(merged, start=1):
+            cite["number"] = idx
+            cite["formatted"] = self._renumber_reference_text(cite.get("formatted", ""), idx)
+
+        formatted_text = "## References\n\n" + "\n\n".join(c["formatted"] for c in merged)
+        if not merged:
+            formatted_text = "## References\n\nNo references found."
+
+        verified = sum(1 for c in merged if c.get("verified") or c.get("doi"))
+
+        return {
+            "agent": "Citation Agent",
+            "citations": merged,
+            "total": len(merged),
+            "verified": verified,
+            "style": primary.get("style") or secondary.get("style"),
+            "formatted_text": formatted_text,
+            "timestamp": datetime.now().isoformat(),
+        }
     
     def get_session(self, session_id: str) -> Optional[Dict]:
         """Get session data."""

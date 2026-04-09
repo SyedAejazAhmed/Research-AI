@@ -134,7 +134,8 @@ class Summarizer:
         prompt = (
             "Summarise this source file in 2–5 sentences. "
             "State its purpose, key functions/classes, and role in the project. "
-            "Use ONLY information present in the code — do NOT fabricate anything.\n\n"
+            "Use ONLY information present in the code — do NOT fabricate anything. "
+            "Do NOT quote large code snippets; describe behavior and intent only.\n\n"
             f"File: {relative}\n\n```\n{content}\n```"
         )
         result = self._llm_call(prompt, label=str(relative))
@@ -223,6 +224,7 @@ class Summarizer:
         file_summaries: List[str],
         repo_name: str,
         tree: str,
+        image_entries: Optional[List[Dict[str, object]]] = None,
     ) -> str:
         """Generate the final Markdown summary following the required schema.
 
@@ -238,6 +240,18 @@ class Summarizer:
         if len(combined) > _SUMMARY_CONTEXT_CAP:
             combined = combined[:_SUMMARY_CONTEXT_CAP] + "\n\n... [TRUNCATED]"
 
+        image_entries = image_entries or []
+        if image_entries:
+            image_lines = []
+            for item in image_entries[:40]:
+                rel = str(item.get("relative_path", ""))
+                desc = str(item.get("description", ""))
+                flag = "generated" if bool(item.get("likely_generated")) else "asset"
+                image_lines.append(f"- {rel} ({flag}): {desc}")
+            images_block = "\n".join(image_lines)
+        else:
+            images_block = "No cataloged image artifacts."
+
         sections_list = "\n".join(REQUIRED_SECTIONS)
 
         prompt = (
@@ -247,6 +261,7 @@ class Summarizer:
             f"**Repository:** {repo_name}\n\n"
             f"**Directory Structure:**\n```\n{tree}\n```\n\n"
             f"**File / Module Summaries:**\n{combined}\n\n"
+            f"**Image Artifact Notes:**\n{images_block}\n\n"
             "---\n\n"
             "Generate the summary using these **exact** section headings "
             "(in this order):\n\n"
@@ -259,6 +274,10 @@ class Summarizer:
             "4. Do NOT assume or hallucinate any information.\n"
             "5. Be specific and technical — reference actual file names and "
             "code structures where relevant.\n"
+            "6. Describe code behavior at a conceptual level; do not paste raw "
+            "source code snippets into the final summary.\n"
+            "7. If image artifacts are present, mention their likely role under the "
+            "most relevant sections (for example Core Components or Key Algorithms / Models).\n"
         )
 
         result = self._llm_call(prompt, label="final_summary")

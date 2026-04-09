@@ -21,6 +21,7 @@ from file_filter import FileFilter
 from structure_generator import StructureGenerator
 from summarizer import Summarizer
 from title_generator import TitleGenerator
+from image_cataloger import ImageCataloger
 
 # ======================================================================
 # Logging configuration
@@ -165,6 +166,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
     structure_gen = StructureGenerator()
     summarizer = Summarizer(api_key=api_key, model_name=args.model)
     title_gen = TitleGenerator(api_key=api_key, model_name=args.model)
+    image_cataloger = ImageCataloger()
 
     try:
         # ── Step 1: Clone ──────────────────────────────────────────
@@ -181,17 +183,34 @@ def run_pipeline(args: argparse.Namespace) -> None:
         _banner("STEP 3 — Filtering relevant files")
         relevant_files = file_filter.filter_files(repo_path)
 
-        if not relevant_files:
+        # ── Step 3b: Image artifacts ───────────────────────────────
+        _banner("STEP 3b — Cataloging image artifacts")
+        image_entries = image_cataloger.catalog_images(
+            repo_path=repo_path,
+            source_files=relevant_files,
+            output_images_dir=output_dir / "images",
+        )
+
+        if not relevant_files and not image_entries:
             logger.warning("No relevant source files found — generating minimal outputs.")
             summary_text = Summarizer.fallback_summary(repo_name)
             title_text = TitleGenerator._fallback_title(repo_name)
         else:
             # ── Step 4: Summarise ──────────────────────────────────
-            _banner("STEP 4 — Generating file / module summaries")
-            file_summaries = summarizer.summarize_files_batch(relevant_files, repo_path)
+            if relevant_files:
+                _banner("STEP 4 — Generating file / module summaries")
+                file_summaries = summarizer.summarize_files_batch(relevant_files, repo_path)
+            else:
+                logger.info("No textual source files included; proceeding with tree + image metadata.")
+                file_summaries = []
 
             _banner("STEP 4b — Generating structured summary")
-            summary_text = summarizer.generate_summary(file_summaries, repo_name, tree)
+            summary_text = summarizer.generate_summary(
+                file_summaries=file_summaries,
+                repo_name=repo_name,
+                tree=tree,
+                image_entries=image_entries,
+            )
 
             # ── Step 5: Title ──────────────────────────────────────
             _banner("STEP 5 — Generating title")
@@ -214,7 +233,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
         logger.info("  ├── project structure/structure.txt")
         logger.info("  ├── summary/summary.md")
         logger.info("  ├── title/title.txt")
-        logger.info("  └── images/   (reserved)")
+        logger.info("  └── images/image_manifest.{json,md} + copied assets")
 
     except RepoHandlerError as exc:
         logger.error("Repository error: %s", exc)

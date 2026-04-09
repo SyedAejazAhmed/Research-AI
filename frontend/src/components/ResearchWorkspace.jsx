@@ -238,7 +238,7 @@ export default function ResearchWorkspace({
         {/* Actions */}
         <div className="flex items-center gap-2">
           {report && (
-            <a href={`/api/export/${sessionId}/pdf`} target="_blank" rel="noreferrer"
+            <a href={`/api/export/${sessionId}/pdf?download=1`} download
               className="p-2 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white transition-all border border-gray-700">
               <Download size={15} />
             </a>

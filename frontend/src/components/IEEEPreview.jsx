@@ -1,84 +1,62 @@
 /**
  * IEEEPreview.jsx
  *
- * Live IEEE-style paper preview panel.
- * Shows all sections in IEEE format as they are generated + edited.
- *
- * Features:
- *  - IEEE two-column paper look (simulated with CSS)
- *  - Title / Author / Abstract / numbered sections
- *  - Active section highlighted with violet ring
- *  - Word-count summary
+ * Exact PDF preview panel.
+ * - Starts as a blank paper canvas
+ * - Auto-compiles partial PDF as sections arrive
+ * - Renders only real compiled PDF output (no simulated draft)
  */
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Download, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { SECTION_ORDER, SECTION_META } from './SectionSidebar';
-
-function wordCount(text = '') {
-  return text.trim() ? text.trim().split(/\s+/).length : 0;
-}
-
-// Strip markdown bold/italic markers for plain preview
-function stripMd(text = '') {
-  return text
-    .replace(/\*\*(.*?)\*\*/g, '$1')
-    .replace(/\*(.*?)\*/g, '$1')
-    .replace(/__(.*?)__/g, '$1')
-    .replace(/`(.*?)`/g, '$1')
-    .replace(/#{1,6}\s?/g, '')
-    .trim();
-}
-
-function toRoman(n) {
-  const map = [
-    [1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'],
-    [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'],
-    [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I'],
-  ];
-  let x = n;
-  let out = '';
-  for (const [v, sym] of map) {
-    while (x >= v) {
-      out += sym;
-      x -= v;
-    }
-  }
-  return out;
-}
 
 export default function IEEEPreview({
   sections,       // [{key, title, content}]
   editValues,     // {[key]: string}
-  activeKey,
   plan,           // {title, query, keywords}
-  approvedKeys,   // Set<string>
   sessionId,
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [compiling, setCompiling] = useState(false);
   const [compileResult, setCompileResult] = useState(null);
+  const [pdfVersion, setPdfVersion] = useState(0);
+  const debounceRef = useRef(null);
+  const lastCompiledSignatureRef = useRef('');
 
   const paperTitle  = plan?.title || plan?.query || 'Research Paper';
-  const paperDate   = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
+  const previewPdfUrl = compileResult?.preview_pdf || compileResult?.download_pdf || null;
+  const downloadPdfUrl = compileResult?.download_pdf || null;
 
-  async function handleGeneratePDF() {
-    const abstractSec = sections.find(s => s.key === 'abstract');
-    const abstractText = editValues?.['abstract'] ?? abstractSec?.content ?? '';
+  const abstractText = useMemo(() => {
+    const absSec = sections.find(s => s.key === 'abstract');
+    return (editValues?.abstract ?? absSec?.content ?? '').trim();
+  }, [sections, editValues]);
 
-    const bodySections = SECTION_ORDER
+  const bodySections = useMemo(() => (
+    SECTION_ORDER
       .filter(k => k !== 'abstract')
       .map(k => {
         const sec = sections.find(s => s.key === k);
         if (!sec) return null;
         return {
           title: SECTION_META[k]?.label || k,
-          content: editValues?.[k] ?? sec.content,
+          content: (editValues?.[k] ?? sec.content ?? '').trim(),
         };
       })
-      .filter(Boolean);
+      .filter(Boolean)
+      .filter(s => s.content.length > 0)
+  ), [sections, editValues]);
 
+  const hasRenderableContent = abstractText.length > 0 || bodySections.length > 0;
+  const compileSignature = useMemo(() => JSON.stringify({
+    t: paperTitle,
+    a: abstractText,
+    b: bodySections,
+  }), [paperTitle, abstractText, bodySections]);
+
+  async function compileCurrentContent() {
+    if (!hasRenderableContent) return;
     setCompiling(true);
-    setCompileResult(null);
     try {
       const res = await fetch('/api/write/partial', {
         method: 'POST',
@@ -96,12 +74,34 @@ export default function IEEEPreview({
       });
       const data = await res.json();
       setCompileResult(data);
+      if (data?.status === 'success' && data?.download_pdf) {
+        setPdfVersion(v => v + 1);
+        lastCompiledSignatureRef.current = compileSignature;
+      }
     } catch (err) {
       setCompileResult({ error: String(err) });
     } finally {
       setCompiling(false);
     }
   }
+
+  function handleGeneratePDF() {
+    compileCurrentContent();
+  }
+
+  useEffect(() => {
+    if (!hasRenderableContent) return;
+    if (compileSignature === lastCompiledSignatureRef.current) return;
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      compileCurrentContent();
+    }, 1200);
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [compileSignature, hasRenderableContent]);
 
   // ── Collapsed state ────────────────────────────────────────────────────
   if (collapsed) {
@@ -119,114 +119,35 @@ export default function IEEEPreview({
 
   // ── Full preview ───────────────────────────────────────────────────────
   return (
-    <div className="w-80 flex flex-col bg-gray-950 border-l border-gray-800 shrink-0">
+    <div className="w-[32rem] max-w-[46vw] min-w-[26rem] flex flex-col bg-gray-950 border-l border-gray-800 shrink-0">
       {/* Header bar */}
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-800 shrink-0">
         <div className="flex items-center gap-2">
-          <span className="text-[9px] font-black uppercase tracking-widest text-gray-500">IEEE Preview</span>
-          <span className="text-[8px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 py-0.5 rounded font-bold">LIVE</span>
+          <span className="text-[9px] font-black uppercase tracking-widest text-gray-500">PDF Preview</span>
+          <span className="text-[8px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-bold">EXACT</span>
         </div>
         <button onClick={() => setCollapsed(true)} className="p-1 hover:bg-gray-800 rounded transition-colors text-gray-600 hover:text-gray-300">
           <EyeOff size={13} />
         </button>
       </div>
 
-      {/* Paper render */}
-      <div className="flex-1 overflow-y-auto px-1 py-2">
-        <div className="bg-white rounded-lg mx-2 my-1 p-4 text-gray-900" style={{ fontFamily: '"Times New Roman", serif' }}>
-
-          {/* IEEE Title block */}
-          <div className="text-center mb-3 pb-2 border-b border-gray-300">
-            <h1 style={{ fontSize: '13px', fontWeight: 'bold', lineHeight: '1.3' }} className="mb-1">
-              {paperTitle}
-            </h1>
-            <div style={{ fontSize: '10px' }} className="text-gray-600">
-              Yukti Research AI &nbsp;•&nbsp; {paperDate}
+      {/* Exact PDF render */}
+      <div className="flex-1 overflow-y-auto px-2 py-2 bg-gray-900/50">
+        <div className="mx-1 my-1 h-full rounded-lg overflow-hidden border border-gray-700 bg-black/20">
+          {previewPdfUrl ? (
+            <iframe
+              key={`${previewPdfUrl}-${pdfVersion}`}
+              title="Generated PDF Preview"
+              src={`${previewPdfUrl}#toolbar=0&navpanes=0&view=FitH`}
+              className="w-full h-full"
+            />
+          ) : (
+            <div className="h-full flex items-center justify-center p-4">
+              <div className="bg-white rounded-md border border-gray-300 w-full max-w-[19rem] aspect-[210/297] shadow-sm flex items-center justify-center text-center px-5 text-[11px] text-gray-500" style={{ fontFamily: '"Times New Roman", serif' }}>
+                Blank page preview. As each section is generated, the PDF will compile automatically and appear here.
+              </div>
             </div>
-          </div>
-
-          {/* Abstract */}
-          {(() => {
-            const absSec = sections.find(s => s.key === 'abstract');
-            if (!absSec) return null;
-            const content = editValues?.['abstract'] ?? absSec.content;
-            return (
-              <div
-                className={`mb-3 rounded transition-all ${activeKey === 'abstract' ? 'ring-2 ring-violet-400 ring-offset-1 ring-offset-white' : ''}`}
-              >
-                <div style={{ fontSize: '9px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.08em' }} className="mb-1">
-                  Abstract
-                </div>
-                <p style={{ fontSize: '9px', lineHeight: '1.5', fontStyle: 'italic' }}>
-                  {stripMd(content).slice(0, 600)}
-                  {content.length > 600 ? '…' : ''}
-                </p>
-              </div>
-            );
-          })()}
-
-          {/* IEEE rule */}
-          <hr className="border-gray-400 mb-2" style={{ borderTopWidth: '2px', borderBottomWidth: '1px' }} />
-
-          {/* Body sections in two-column layout */}
-          <div style={{ columnCount: 2, columnGap: '12px' }}>
-            {SECTION_ORDER.filter(k => k !== 'abstract' && k !== 'references').map((key, idx) => {
-              const sec = sections.find(s => s.key === key);
-              if (!sec) return null;
-              const content   = editValues?.[key] ?? sec.content;
-              const isActive  = activeKey === key;
-              const meta      = SECTION_META[key];
-              const wc        = wordCount(content);
-              const ok        = wc >= meta.min && wc <= meta.max;
-
-              return (
-                <div
-                  key={key}
-                  style={{ breakInside: 'avoid', marginBottom: '6px' }}
-                  className={`rounded transition-all ${isActive ? 'ring-2 ring-violet-400 ring-offset-1 ring-offset-white' : ''}`}
-                >
-                  <div style={{ fontSize: '9px', fontWeight: 'bold', marginBottom: '2px' }}>
-                    {/* Roman numeral */}
-                    {toRoman(idx + 1)}. {meta.label.toUpperCase()}
-                    {approvedKeys.has(key) && (
-                      <span className="ml-1 text-emerald-600">✓</span>
-                    )}
-                  </div>
-                  <p style={{ fontSize: '8.5px', lineHeight: '1.4', textAlign: 'justify' }}>
-                    {stripMd(content).slice(0, 400)}
-                    {content.length > 400 ? '…' : ''}
-                  </p>
-                  {/* Word count tag */}
-                  <div style={{ fontSize: '7px', marginTop: '2px' }} className={ok ? 'text-emerald-600' : 'text-amber-600'}>
-                    {wc} words
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* References preview */}
-          {(() => {
-            const refSec = sections.find(s => s.key === 'references');
-            if (!refSec) return null;
-            const refContent = (editValues?.references ?? refSec.content ?? '').trim();
-            if (!refContent) return null;
-
-            return (
-              <div className={`mt-3 rounded transition-all ${activeKey === 'references' ? 'ring-2 ring-violet-400 ring-offset-1 ring-offset-white' : ''}`}>
-                <div style={{ fontSize: '9px', fontWeight: 'bold', marginBottom: '4px' }}>
-                  REFERENCES
-                  {approvedKeys.has('references') && (
-                    <span className="ml-1 text-emerald-600">✓</span>
-                  )}
-                </div>
-                <pre style={{ fontSize: '8px', lineHeight: '1.35', whiteSpace: 'pre-wrap', fontFamily: '"Times New Roman", serif' }}>
-                  {stripMd(refContent).slice(0, 1400)}
-                  {refContent.length > 1400 ? '\n…' : ''}
-                </pre>
-              </div>
-            );
-          })()}
+          )}
         </div>
       </div>
 
@@ -253,14 +174,24 @@ export default function IEEEPreview({
                 .tex
               </a>
             )}
-            {compileResult.download_pdf && (
-              <a href={compileResult.download_pdf} target="_blank" rel="noreferrer"
+            {previewPdfUrl && (
+              <a href={previewPdfUrl} target="_blank" rel="noreferrer"
                 className="flex-1 py-1.5 rounded-lg bg-indigo-700 hover:bg-indigo-600 text-white text-[10px] text-center font-bold transition-colors">
-                PDF
+                Open PDF
+              </a>
+            )}
+            {downloadPdfUrl && (
+              <a href={downloadPdfUrl} download
+                className="flex-1 py-1.5 rounded-lg bg-violet-700 hover:bg-violet-600 text-white text-[10px] text-center font-bold transition-colors">
+                Download PDF
               </a>
             )}
           </div>
         )}
+
+        <div className="text-[9px] text-gray-500 text-center">
+          Auto-compiles as new sections arrive and shows exact PDF output.
+        </div>
       </div>
 
     </div>

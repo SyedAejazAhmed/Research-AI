@@ -88,7 +88,7 @@ chat_sessions: Dict[str, Dict] = {}
 
 class ResearchRequest(BaseModel):
     query: str
-    citation_style: str = "APA"
+    citation_style: str = "IEEE"
 
 
 class ReferencesRequest(BaseModel):
@@ -386,8 +386,9 @@ async def write_report(req: WriteRequest):
             "pdf_success": write_result["pdf_success"],
             "compile_errors": write_result["compile_errors"],
             "compile_warnings": write_result["compile_warnings"],
-            "download_tex": f"/api/export/{req.session_id}/latex",
-            "download_pdf": f"/api/export/{req.session_id}/pdf" if write_result["pdf_success"] else None,
+            "download_tex": f"/api/export/{req.session_id}/latex?download=1",
+            "preview_pdf": f"/api/export/{req.session_id}/pdf" if write_result["pdf_success"] else None,
+            "download_pdf": f"/api/export/{req.session_id}/pdf?download=1" if write_result["pdf_success"] else None,
         }
     except Exception as exc:
         logger.error(f"Writing service error: {exc}", exc_info=True)
@@ -428,8 +429,9 @@ async def write_partial_report(req: PartialWriteRequest):
             "pdf_success": write_result["pdf_success"],
             "compile_errors": write_result["compile_errors"],
             "compile_warnings": write_result["compile_warnings"],
-            "download_tex": f"/api/export/{partial_sid}/latex",
-            "download_pdf": f"/api/export/{partial_sid}/pdf" if write_result["pdf_success"] else None,
+            "download_tex": f"/api/export/{partial_sid}/latex?download=1",
+            "preview_pdf": f"/api/export/{partial_sid}/pdf" if write_result["pdf_success"] else None,
+            "download_pdf": f"/api/export/{partial_sid}/pdf?download=1" if write_result["pdf_success"] else None,
         }
     except Exception as exc:
         logger.error(f"Partial write error: {exc}", exc_info=True)
@@ -457,8 +459,9 @@ async def write_raw_report(request: ResearchRequest):
             "status": "success",
             "session_id": session_id,
             **write_result,
-            "download_tex": f"/api/export/{session_id}/latex",
-            "download_pdf": f"/api/export/{session_id}/pdf" if write_result["pdf_success"] else None,
+            "download_tex": f"/api/export/{session_id}/latex?download=1",
+            "preview_pdf": f"/api/export/{session_id}/pdf" if write_result["pdf_success"] else None,
+            "download_pdf": f"/api/export/{session_id}/pdf?download=1" if write_result["pdf_success"] else None,
         }
     except Exception as exc:
         logger.error(f"Write-raw error: {exc}", exc_info=True)
@@ -575,7 +578,7 @@ async def github_status(job_id: str):
 
 
 @app.get("/api/export/{session_id}/{format}")
-async def export_report(session_id: str, format: str):
+async def export_report(session_id: str, format: str, download: bool = False):
     """Export report in specified format."""
     output_dir = Path("outputs")
     
@@ -600,11 +603,14 @@ async def export_report(session_id: str, format: str):
     
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found. Run research first.")
+
+    disposition = "attachment" if download else "inline"
     
     return FileResponse(
         str(file_path),
         media_type=media_type,
-        filename=filename
+        filename=filename,
+        content_disposition_type=disposition,
     )
 
 
@@ -751,9 +757,13 @@ Rules: Only answer from report context. Use citations. Be concise. Markdown form
                         "type": "write_result",
                         "data": {
                             **write_result,
-                            "download_tex": f"/api/export/{session_id}/latex",
-                            "download_pdf": (
+                            "download_tex": f"/api/export/{session_id}/latex?download=1",
+                            "preview_pdf": (
                                 f"/api/export/{session_id}/pdf"
+                                if write_result["pdf_success"] else None
+                            ),
+                            "download_pdf": (
+                                f"/api/export/{session_id}/pdf?download=1"
                                 if write_result["pdf_success"] else None
                             ),
                         }

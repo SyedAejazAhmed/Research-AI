@@ -141,22 +141,10 @@ class SynthesizerAgent:
         if callback:
             await callback(
                 "synthesizer", "generating",
-                "Generating sections in order: References → Abstract → Introduction → Related Studies → Methodology → Result and Discussion → Conclusion …"
+                "Generating sections in order: Abstract → Introduction → Related Studies → Methodology → Result and Discussion → Conclusion → References …"
             )
 
-        # 1) References first
-        references_content = self._extract_references_content(citations_text)
-        references_section = {
-            "index": -2,
-            "key": "references",
-            "title": "References",
-            "content": references_content,
-        }
-        if callback:
-            await self._safe_callback(callback, "synthesizer", "section_ready",
-                                      "Section ready: References", references_section)
-
-        # 2) Abstract
+        # 1) Abstract
         abstract = await self._generate_abstract(plan, aggregated_data)
         abstract = self._sanitize_generated_text(abstract, "abstract", plan, unified_context)
         abstract = await self._enforce_word_target(
@@ -171,7 +159,7 @@ class SynthesizerAgent:
             await self._safe_callback(callback, "synthesizer", "section_ready",
                                       "Section ready: Abstract", abstract_section)
 
-        # 3) Remaining sections in strict order
+        # 2) Remaining sections in strict order
         body_sections: List[Dict] = []
         for i, section_def in enumerate(ACADEMIC_SECTIONS):
             content = await self._generate_section(section_def, plan, unified_context)
@@ -194,10 +182,24 @@ class SynthesizerAgent:
                 await self._safe_callback(callback, "synthesizer", "section_ready",
                                           f"Section ready: {section_def['title']}", section)
 
+        # 3) References last (after narrative sections)
+        references_content = self._extract_references_content(citations_text)
+        references_section = {
+            "index": len(body_sections),
+            "key": "references",
+            "title": "References",
+            "content": references_content,
+        }
+        if callback:
+            await self._safe_callback(callback, "synthesizer", "section_ready",
+                                      "Section ready: References", references_section)
+
+        ordered_sections = body_sections + [references_section]
+
         if callback:
             await callback("synthesizer", "compiling", "Compiling full report …")
 
-        full_report = self._compile_report(title, abstract, body_sections, citations_text, keywords)
+        full_report = self._compile_report(title, abstract, ordered_sections, citations_text, keywords)
 
         if callback:
             await callback("synthesizer", "completed", "Report synthesis complete!")
@@ -206,7 +208,7 @@ class SynthesizerAgent:
             "agent": self.name,
             "title": title,
             "abstract": abstract,
-            "sections": [references_section] + body_sections,
+            "sections": ordered_sections,
             "full_report": full_report,
             "citations": citations_text,
             "keywords": keywords,
@@ -458,6 +460,11 @@ Original section:
         citations: str,
         keywords: List[str],
     ) -> str:
+        has_references_section = any(
+            (s.get("key") == "references") or ((s.get("title") or "").strip().lower() == "references")
+            for s in sections
+        )
+
         lines = [
             f"# {title}",
             "",
@@ -474,7 +481,10 @@ Original section:
             lines += [f"**Keywords:** {', '.join(keywords)}", ""]
 
         lines += ["---", "", "## Table of Contents", ""]
-        toc_entries = ["Abstract"] + [s["title"] for s in sections] + ["References"]
+        toc_entries = ["Abstract"] + [s["title"] for s in sections]
+        if not has_references_section:
+            toc_entries.append("References")
+
         for idx, name in enumerate(toc_entries, start=1):
             anchor = name.lower().replace(" ", "-")
             lines.append(f"{idx}. [{name}](#{anchor})")
@@ -483,11 +493,12 @@ Original section:
         for i, section in enumerate(sections, start=1):
             lines += [f"## {i}. {section['title']}", "", section["content"], ""]
 
-        lines += [
-            "---",
-            "",
-            citations if citations else "## References\n\nNo references available.",
-            "",
-        ]
+        if not has_references_section:
+            lines += [
+                "---",
+                "",
+                citations if citations else "## References\n\nNo references available.",
+                "",
+            ]
         return "\n".join(lines)
 

@@ -276,6 +276,27 @@ class WritingService:
                         f"{compile_result.get('errors', [])}"
                     )
 
+        if compile_pdf and not result["pdf_success"]:
+            try:
+                fallback_pdf = self.output_dir / f"{session_id}_report.pdf"
+                self._generate_fallback_pdf(
+                    title=title,
+                    abstract=abstract,
+                    sections_data=sections_data,
+                    report_md=report_md,
+                    citations=citations,
+                    output_path=fallback_pdf,
+                )
+                result["pdf_success"] = True
+                result["pdf_path"] = str(fallback_pdf)
+                result["compile_warnings"].append(
+                    "LaTeX compilation failed or was unavailable; generated fallback PDF output."
+                )
+                logger.info("[WritingService] Fallback PDF saved -> %s", fallback_pdf)
+            except Exception as exc:
+                result["compile_errors"].append(f"Fallback PDF generation failed: {exc}")
+                logger.error("[WritingService] Fallback PDF generation error: %s", exc, exc_info=True)
+
         return result
 
     # ------------------------------------------------------------------
@@ -451,3 +472,84 @@ class WritingService:
             if dst.exists():
                 dst.unlink(missing_ok=True)
             os.replace(str(tmp_dst), str(dst))
+
+    def _generate_fallback_pdf(
+        self,
+        title: str,
+        abstract: str,
+        sections_data: List[Dict[str, Any]],
+        report_md: str,
+        citations: Dict[str, Any],
+        output_path: Path,
+    ) -> None:
+        """Generate a plain-text PDF when LaTeX compilation is unavailable."""
+        from fpdf import FPDF
+
+        class FallbackPDF(FPDF):
+            def header(self):
+                self.set_font("helvetica", "I", 8)
+                self.set_text_color(120)
+                self.cell(0, 8, "Yukti Research AI - Fallback PDF", 0, 0, "R")
+                self.ln(10)
+
+            def footer(self):
+                self.set_y(-12)
+                self.set_font("helvetica", "I", 8)
+                self.set_text_color(120)
+                self.cell(0, 8, f"Page {self.page_no()}", 0, 0, "C")
+
+        plain_text = self._fallback_plain_text(title, abstract, sections_data, report_md, citations)
+        plain_text = plain_text.encode("latin-1", "replace").decode("latin-1")
+
+        pdf = FallbackPDF()
+        pdf.set_auto_page_break(auto=True, margin=14)
+        pdf.add_page()
+
+        pdf.set_font("helvetica", "B", 16)
+        pdf.set_text_color(20, 20, 20)
+        pdf.multi_cell(0, 8, title or "Research Report")
+        pdf.ln(2)
+
+        pdf.set_font("helvetica", "", 10)
+        pdf.set_text_color(40, 40, 40)
+        for para in [p.strip() for p in plain_text.split("\n\n") if p.strip()]:
+            pdf.multi_cell(0, 6, para)
+            pdf.ln(1)
+
+        pdf.output(str(output_path))
+
+    @staticmethod
+    def _fallback_plain_text(
+        title: str,
+        abstract: str,
+        sections_data: List[Dict[str, Any]],
+        report_md: str,
+        citations: Dict[str, Any],
+    ) -> str:
+        """Build plain text payload for fallback PDF output."""
+        lines: List[str] = [title or "Research Report", ""]
+
+        if abstract:
+            lines.extend(["Abstract", abstract, ""])
+
+        if sections_data:
+            for sec in sections_data:
+                sec_title = str(sec.get("title", "Section")).strip() or "Section"
+                sec_content = str(sec.get("content", sec.get("body", ""))).strip()
+                if not sec_content:
+                    continue
+                lines.extend([sec_title, sec_content, ""])
+        elif report_md:
+            lines.extend(["Report", report_md, ""])
+
+        formatted_refs = str(citations.get("formatted_text", "")).strip() if isinstance(citations, dict) else ""
+        if formatted_refs:
+            lines.extend(["References", formatted_refs, ""])
+
+        text = "\n".join(lines)
+        # Lightweight markdown cleanup for readable fallback output.
+        text = re.sub(r"\[(.*?)\]\((.*?)\)", r"\1 (\2)", text)
+        text = text.replace("## ", "\n").replace("# ", "\n")
+        text = text.replace("**", "").replace("`", "")
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        return text.strip()

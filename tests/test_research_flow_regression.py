@@ -15,19 +15,19 @@ from app.agents.planner import PlannerAgent
 from app.agents.synthesizer import SynthesizerAgent
 
 
-def test_planner_default_sections_reference_first_order() -> None:
+def test_planner_default_sections_abstract_first_order() -> None:
     planner = PlannerAgent(llm_client=None)
     sections = planner._default_sections("federated learning in healthcare")
     titles = [s["title"] for s in sections]
 
     assert titles == [
-        "References",
         "Abstract",
         "Introduction",
         "Related Studies",
         "Methodology",
         "Result and Discussion",
         "Conclusion",
+        "References",
     ]
 
 
@@ -55,15 +55,15 @@ def test_synthesizer_emits_sections_in_strict_order() -> None:
     result = asyncio.run(synthesizer.synthesize(aggregated_data, callback=cb))
 
     assert seen_order == [
-        "references",
         "abstract",
         "introduction",
         "related_studies",
         "methodology",
         "result_discussion",
         "conclusion",
+        "references",
     ]
-    assert result["sections"][0]["key"] == "references"
+    assert result["sections"][-1]["key"] == "references"
 
 
 class _FakeUnavailableLLM:
