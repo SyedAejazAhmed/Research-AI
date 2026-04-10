@@ -198,7 +198,7 @@ class WritingService:
         research_result: Dict[str, Any],
         session_id: str,
         compile_pdf: bool = True,
-        template: str = "article",
+        template: str = "ieee",
         author: str = "Yukti Research AI",
     ) -> Dict[str, Any]:
         """

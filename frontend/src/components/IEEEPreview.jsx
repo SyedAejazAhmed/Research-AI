@@ -67,7 +67,7 @@ export default function IEEEPreview({
           sections: bodySections,
           citations: {},
           compile_pdf: true,
-          template: 'article',
+          template: 'ieee',
           author: 'Yukti Research AI',
           session_id: sessionId || '',
         }),

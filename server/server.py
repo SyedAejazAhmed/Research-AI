@@ -113,7 +113,7 @@ class ExportRequest(BaseModel):
 class WriteRequest(BaseModel):
     session_id: str
     compile_pdf: bool = True
-    template: str = "article"   # article | ieee | acm
+    template: str = "ieee"   # ieee | article | acm
     author: str = "Yukti Research AI"
 
 
@@ -124,7 +124,7 @@ class PartialWriteRequest(BaseModel):
     sections: List[Dict[str, str]]   # [{"title": ..., "content": ...}, ...]
     citations: Dict[str, Any] = {}
     compile_pdf: bool = True
-    template: str = "article"
+    template: str = "ieee"
     author: str = "Yukti Research AI"
     session_id: str = ""            # optional, used only for output filename
 
@@ -750,7 +750,7 @@ Rules: Only answer from report context. Use citations. Be concise. Markdown form
                         research_result=result_data,
                         session_id=session_id,
                         compile_pdf=request.get("compile_pdf", True),
-                        template=request.get("template", "article"),
+                        template=request.get("template", "ieee"),
                         author=request.get("author", "Yukti Research AI"),
                     )
                     await websocket.send_json({

@@ -409,8 +409,11 @@ class LaTeXWriterAgent(BaseAgent):
     
     def assemble_document(self, doc: LaTeXDocument) -> str:
         """Assemble a complete LaTeX document."""
+        if self._is_ieee_document_class(doc.document_class):
+            return self._assemble_ieee_document(doc)
+
         latex = f"\\documentclass[12pt,a4paper]{{{doc.document_class}}}\n\n"
-        
+
         # Standard preamble
         latex += """% Packages
 \\usepackage[utf8]{inputenc}
@@ -423,34 +426,85 @@ class LaTeXWriterAgent(BaseAgent):
 \\geometry{margin=1in}
 
 """
-        
+
         if doc.preamble:
             latex += f"% Custom preamble\n{doc.preamble}\n\n"
-        
+
         # Title info
         latex += f"\\title{{{doc.title}}}\n"
         latex += f"\\author{{{doc.author}}}\n"
         latex += "\\date{\\today}\n\n"
-        
+
         # Document body
         latex += "\\begin{document}\n\n"
         latex += "\\maketitle\n\n"
-        
+
         if doc.abstract:
             latex += f"\\begin{{abstract}}\n{doc.abstract}\n\\end{{abstract}}\n\n"
-        
+
         # Sections
         for section in doc.sections:
             latex += section.to_latex()
             latex += "\n"
-        
+
         # Bibliography
         if doc.bibliography:
             latex += "\\bibliographystyle{plainnat}\n"
             latex += "\\bibliography{references}\n\n"
-        
+
         latex += "\\end{document}\n"
-        
+
+        return latex
+
+    @staticmethod
+    def _is_ieee_document_class(document_class: str) -> bool:
+        """Return True when the requested template is an IEEE variant."""
+        normalized = (document_class or "").strip().lower()
+        return normalized in {"ieee", "ieeetran", "ieee-tran", "ieee_tran"}
+
+    def _assemble_ieee_document(self, doc: LaTeXDocument) -> str:
+        """Assemble a document using IEEEtran conference format."""
+        latex = """\\documentclass[conference]{IEEEtran}
+\\IEEEoverridecommandlockouts
+
+% IEEE packages
+\\usepackage[utf8]{inputenc}
+\\usepackage[T1]{fontenc}
+\\usepackage{cite}
+\\usepackage{amsmath,amssymb,amsfonts}
+\\usepackage{algorithmic}
+\\usepackage{graphicx}
+\\usepackage{textcomp}
+\\usepackage{xcolor}
+\\usepackage{hyperref}
+\\usepackage{url}
+
+"""
+
+        if doc.preamble:
+            latex += f"% Custom preamble\n{doc.preamble}\n\n"
+
+        latex += f"\\title{{{doc.title}}}\n"
+        latex += f"\\author{{{doc.author}}}\n\n"
+        latex += "\\begin{document}\n\n"
+        latex += "\\maketitle\n\n"
+
+        if doc.abstract:
+            latex += f"\\begin{{abstract}}\n{doc.abstract}\n\\end{{abstract}}\n\n"
+
+        latex += "\\begin{IEEEkeywords}\n"
+        latex += "Artificial Intelligence, Academic Writing, IEEE Format\n"
+        latex += "\\end{IEEEkeywords}\n\n"
+
+        for section in doc.sections:
+            latex += section.to_latex()
+            latex += "\n"
+
+        if doc.bibliography:
+            latex += "\\bibliographystyle{IEEEtran}\n"
+            latex += "\\bibliography{references}\n\n"
+
+        latex += "\\end{document}\n"
         return latex
     
     async def write_from_research(self, research_data: Dict[str, Any], model: str = None) -> str:

@@ -10,7 +10,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from multi_agent.agents.latex_writer import LaTeXWriterAgent, LaTeXSection
+from multi_agent.agents.latex_writer import LaTeXDocument, LaTeXWriterAgent, LaTeXSection
 from server.writing_service import WritingService
 
 
@@ -34,3 +34,18 @@ def test_normalize_latex_text_replaces_problem_unicode() -> None:
     assert "\u202f" not in normalized
     assert "\u2011" not in normalized
     assert "alpha" in normalized
+
+
+def test_assemble_document_ieee_template_uses_ieeetran() -> None:
+    agent = LaTeXWriterAgent()
+    doc = LaTeXDocument(
+        title="IEEE Template Test",
+        author="Yukti Research AI",
+        abstract="Short abstract.",
+        sections=[LaTeXSection(title="Introduction", content="Body text")],
+        document_class="ieee",
+    )
+
+    latex = agent.assemble_document(doc)
+    assert "\\documentclass[conference]{IEEEtran}" in latex
+    assert "\\begin{IEEEkeywords}" in latex

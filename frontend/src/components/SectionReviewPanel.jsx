@@ -137,7 +137,7 @@ export default function SectionReviewPanel({ sections, setSections, sessionId, s
           sections:   bodySections,
           citations:  {},
           compile_pdf: true,
-          template:   'article',
+          template:   'ieee',
           author:     'Yukti Research AI',
           session_id: sessionId || '',
         }),
@@ -166,7 +166,7 @@ export default function SectionReviewPanel({ sections, setSections, sessionId, s
         body: JSON.stringify({
           session_id: sessionId,
           compile_pdf: true,
-          template: 'article',
+          template: 'ieee',
           author: 'Yukti Research AI',
         }),
       });
