@@ -17,7 +17,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.orchestrator import ResearchOrchestrator
 from app.agents.llm_client import OllamaClient
@@ -95,6 +95,7 @@ class ReferencesRequest(BaseModel):
     query: str
     limit: int = DEFAULT_LIMIT
     style: str = DEFAULT_STYLE
+    excluded_titles: List[str] = Field(default_factory=list)
 
 
 class ReferencesFormatsResponse(BaseModel):
@@ -255,7 +256,7 @@ async def generate_reference_section(req: ReferencesRequest):
         raise HTTPException(status_code=400, detail="limit must be between 1 and 100")
 
     try:
-        result = generate_references(req.query.strip(), req.limit, req.style)
+        result = generate_references(req.query.strip(), req.limit, req.style, req.excluded_titles)
         return {"status": "success", "data": result}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
