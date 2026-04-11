@@ -1,545 +1,439 @@
-import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Zap, Cpu, Sparkles, LogOut, Shield, Github, Tag, BookOpen, ChevronRight, Activity } from 'lucide-react';
-import confetti from 'canvas-confetti';
+import { useEffect, useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { ArrowRight, BookOpen, FolderOpen, Github, LogOut, ShieldCheck, Sparkles } from 'lucide-react';
 import { useResearch } from './hooks/useResearch';
-import Auth from './components/Auth';
-import Landing from './components/Landing';
 import ResearchWorkspace from './components/ResearchWorkspace';
 
-import DarkVeil from './components/DarkVeil';
-import PixelSnow from './components/PixelSnow';
-import GradientText from './components/GradientText';
-import Stepper, { Step } from './components/Stepper';
+const guideSteps = [
+  {
+    step: '2',
+    title: 'Conceptualize',
+    body: 'Enter any complex query. Our PlannerAgent will decompose it into a logical ontogical tree across multiple academic clusters.',
+  },
+  {
+    step: '3',
+    title: 'Hallucination Shield',
+    body: 'Unlike standard LLMs, Yukti verifies every single claim against live bibliographic databases (ArXiv, PubMed, Semantic Scholar).',
+  },
+  {
+    step: '4',
+    title: 'Final Initialization',
+    body: 'We are ready to ignite. What should our first research directive be?',
+  },
+];
 
-const Background = () => (
-  <div className="fixed inset-0 -z-30 overflow-hidden bg-slate-950">
-    {/* Cinematic Shader Background */}
-    <div className="absolute inset-0 opacity-40">
-      <DarkVeil hueShift={220} warpAmount={0.3} speed={0.2} />
-    </div>
+const pageShell =
+  'min-h-screen bg-[radial-gradient(circle_at_20%_20%,rgba(16,185,129,0.14),transparent_34%),radial-gradient(circle_at_80%_10%,rgba(56,189,248,0.12),transparent_30%),linear-gradient(180deg,#060f1c_0%,#020617_52%,#01020a_100%)] text-slate-100';
 
-    {/* Atmospheric Depth Layer */}
-    <div className="absolute inset-0 opacity-20 pointer-events-none">
-      <PixelSnow density={0.4} speed={1.2} />
-    </div>
-
-    {/* Vignette & Gradients Mask */}
-    <div className="absolute inset-0 bg-gradient-to-b from-transparent via-background/20 to-background" />
-    <div className="absolute inset-0 shadow-[inset_0_0_150px_rgba(0,0,0,0.8)]" />
-
-    {/* Noise Texture */}
-    <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.1] mix-blend-overlay pointer-events-none" />
-  </div>
-);
-
-
-const SystemModal = ({ status, onOptimize, isOptimizing, onClose }) => (
-  <motion.div
-    initial={{ opacity: 0 }}
-    animate={{ opacity: 1 }}
-    exit={{ opacity: 0 }}
-    className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-xl"
-  >
-    <motion.div
-      initial={{ scale: 0.9, y: 20 }}
-      animate={{ scale: 1, y: 0 }}
-      className="glass-card max-w-lg w-full p-8 relative overflow-hidden"
-    >
-      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary via-secondary to-accent" />
-
-      <div className="flex items-center justify-between mb-8">
-        <div className="flex items-center gap-3">
-          <div className="p-3 rounded-xl bg-primary/10 text-primary">
-            <Cpu size={24} />
-          </div>
-          <h2 className="text-2xl font-black font-outfit tracking-tight">Neural Optimization</h2>
-        </div>
-        <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-lg transition-colors text-slate-500 hover:text-white">
-          <ChevronRight className="rotate-90" size={20} />
-        </button>
-      </div>
-
-      <div className="space-y-6">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="p-4 rounded-2xl bg-white/5 border border-white/5">
-            <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Memory Capacity</div>
-            <div className="text-xl font-bold">{status?.system_info?.ram_gb || 0} GB RAM</div>
-          </div>
-          <div className="p-4 rounded-2xl bg-white/5 border border-white/5">
-            <div className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Processor Cores</div>
-            <div className="text-xl font-bold">{status?.system_info?.cores || 0} Logic Cores</div>
-          </div>
-        </div>
-
-        <div className="p-6 rounded-2xl bg-primary/5 border border-primary/20">
-          <div className="flex items-center justify-between mb-4">
-            <div className="text-[10px] font-black uppercase tracking-widest text-primary">Current Model</div>
-            <div className={`px-2 py-0.5 rounded text-[9px] font-bold ${status?.available ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
-              {status?.available ? 'ACTIVE' : 'OFFLINE'}
-            </div>
-          </div>
-          <div className="text-lg font-bold font-mono text-slate-300 mb-1">{status?.model || 'None Connected'}</div>
-          <div className="text-[11px] text-slate-500">Ollama API: {status?.base_url}</div>
-        </div>
-
-        <div className="p-6 rounded-2xl bg-secondary/5 border border-secondary/20 relative group">
-          <div className="text-[10px] font-black uppercase tracking-widest text-secondary mb-3">Yukti Recommendation</div>
-          <div className="text-lg font-bold text-white mb-2">{status?.recommended}</div>
-          <p className="text-[11px] text-slate-400 leading-relaxed">Based on your hardware, we recommend this model for the best balance between synthesis depth and processing speed.</p>
-        </div>
-      </div>
-
-      <button
-        disabled={isOptimizing}
-        onClick={onOptimize}
-        className="w-full mt-10 py-4 rounded-xl bg-white text-slate-900 font-bold flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
-      >
-        {isOptimizing ? (
-          <>
-            <Activity className="animate-spin" size={20} />
-            <span>OPTIMIZING NEURAL PATHS...</span>
-          </>
-        ) : (
-          <>
-            <Zap size={20} className="fill-current" />
-            <span>IGNITE SYSTEM OPTIMIZATION</span>
-          </>
-        )}
-      </button>
-    </motion.div>
-  </motion.div>
-);
-
-const App = () => {
-  const [view, setView] = useState('landing');
-  const [user, setUser] = useState(null);
-  const [showOnboarding, setShowOnboarding] = useState(false);
-  const [sessions, setSessions] = useState({});
-  const [query, setQuery] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
-  // GitHub project research mode
-  const [inputMode, setInputMode] = useState('topic');  // 'topic' | 'github'
-  const [githubUrl, setGithubUrl] = useState('');
-  const [githubTitle, setGithubTitle] = useState('');
-  const [isAnalyzingGithub, setIsAnalyzingGithub] = useState(false);
-  const [githubError, setGithubError] = useState(null);
-  const { connect, sendMessage, status, agents, logs, report, plan, sections, setSections, messages, sessionId } = useResearch();
-  const [onboardingName, setOnboardingName] = useState('');
-  const [systemStatus, setSystemStatus] = useState(null);
-  const [showSystemModal, setShowSystemModal] = useState(false);
-  const [isOptimizing, setIsOptimizing] = useState(false);
-
-  const fetchSystemStatus = async () => {
-    try {
-      const resp = await fetch('/api/status');
-      const data = await resp.json();
-      setSystemStatus(data.llm);
-    } catch (e) {
-      console.error("System status fetch error", e);
-    }
-  };
-
-  const runSystemOptimization = async () => {
-    setIsOptimizing(true);
-    try {
-      const resp = await fetch('/api/system/setup', { method: 'POST' });
-      const data = await resp.json();
-      setSystemStatus(data.status);
-      confetti({
-        particleCount: 150,
-        spread: 70,
-        origin: { y: 0.6 },
-        colors: ['#10b981', '#34d399', '#6ee7b7']
-      });
-    } catch (e) {
-      console.error("Optimization error", e);
-    } finally {
-      setIsOptimizing(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchSystemStatus();
-    const interval = setInterval(fetchSystemStatus, 30000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const fetchSessions = async () => {
-    try {
-      const resp = await fetch('/api/sessions');
-      const data = await resp.json();
-      setSessions(data);
-    } catch (e) {
-      console.error("Fetch sessions error", e);
-    }
-  };
-
-  useEffect(() => {
-    fetchSessions();
-  }, []);
-
-  useEffect(() => {
-    if (status !== 'idle') setIsSearching(true);
-  }, [status]);
-
-  useEffect(() => {
-    if (status === 'completed') {
-      confetti({
-        particleCount: 200,
-        spread: 90,
-        origin: { y: 0.6 },
-        colors: ['#6366f1', '#a855f7', '#22d3ee']
-      });
-      fetchSessions();
-    }
-  }, [status]);
-
-  // Logout Observer
-  useEffect(() => {
-    if (!user && view === 'app') {
-      setView('landing');
-      setIsSearching(false);
-    }
-  }, [user, view]);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!user) { setView('auth'); return; }
-
-    if (inputMode === 'github') {
-      const url = githubUrl.trim();
-      if (!url) return;
-      setIsAnalyzingGithub(true);
-      setGithubError(null);
-      try {
-        const res = await fetch('/api/github/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ repo_url: url, existing_title: githubTitle.trim() || null }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'GitHub analysis failed');
-        // Use provided title > AI-generated title > URL slug
-        const researchQuery =
-          githubTitle.trim() ||
-          data.data?.title ||
-          url.replace('https://github.com/', '').replace(/\.git\/?$/, '');
-        setQuery(researchQuery);
-        connect(researchQuery);
-      } catch (err) {
-        setGithubError(String(err));
-      } finally {
-        setIsAnalyzingGithub(false);
-      }
-    } else {
-      if (!query.trim()) return;
-      connect(query);
-    }
-  };
-
-  const loadSession = async (sid) => {
-    try {
-      const resp = await fetch(`/api/sessions/${sid}`);
-      const data = await resp.json();
-      alert(`Loading Session: ${data.query}\nStatus: ${data.status}`);
-    } catch (e) { }
-  };
-
-  const startAppFlow = () => {
-    if (!user) {
-      setView('auth');
-    } else {
-      setView('app');
-    }
-  };
-
-  if (view === 'auth') return (
-    <>
-      <Background />
-      <Auth onLogin={(u) => {
-        setUser(u);
-        setShowOnboarding(true);
-        setView('app');
-      }} onBack={() => setView('landing')} />
-    </>
-  );
-
-  if (view === 'landing') return (
-    <>
-      <Background />
-      <Landing onStart={startAppFlow} onAuth={() => setView('auth')} />
-    </>
-  );
-
-  if (showOnboarding) return (
-    <div className="min-h-screen flex items-center justify-center p-6 relative">
-      <Background />
+function AuthScreen({ mode, setMode, form, setForm, onSubmit, loading }) {
+  return (
+    <div className={`${pageShell} flex items-center justify-center p-6`}>
       <motion.div
-        initial={{ opacity: 0, scale: 0.9, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="w-full max-w-4xl"
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-md rounded-3xl border border-white/10 bg-slate-900/70 p-8 shadow-2xl backdrop-blur"
       >
-        <Stepper
-          initialStep={1}
-          onFinalStepCompleted={() => setShowOnboarding(false)}
-          backButtonText="PREVIOUS"
-          nextButtonText="CONTINUE"
-        >
-          <Step>
-            <div className="p-8">
-              <div className="w-20 h-20 rounded-3xl bg-primary/20 flex items-center justify-center text-primary mx-auto mb-8 shadow-2xl shadow-primary/20">
-                <Sparkles size={40} />
-              </div>
-              <h2 className="text-4xl font-black mb-4 tracking-tighter">Welcome to the <br />Yukti Platform.</h2>
-              <p className="text-slate-400 max-w-md mx-auto">Greetings, Scholar. Let's initialize your research interface and walks through our autonomous orchestration.</p>
-            </div>
-          </Step>
-          <Step>
-            <div className="p-8">
-              <img style={{ height: '240px', width: '100%', objectFit: 'cover', borderRadius: '2rem' }} src="https://images.unsplash.com/photo-1639322537228-f710d846310a?auto=format&fit=crop&q=80&w=1000" />
-              <h2 className="mt-8 text-3xl font-black tracking-tight">Conceptualize</h2>
-              <p className="text-slate-400 mt-2">Enter any complex query. Our <strong>PlannerAgent</strong> will decompose it into a logical ontogical tree across multiple academic clusters.</p>
-            </div>
-          </Step>
-          <Step>
-            <div className="p-8">
-              <div className="glass-card p-10 bg-emerald-500/5 border-emerald-500/20 mb-8">
-                <Shield className="text-emerald-400 mx-auto mb-6" size={48} />
-                <h2 className="text-emerald-400 text-3xl font-black tracking-tight">Hallucination Shield</h2>
-                <p className="text-slate-400 mt-4 leading-relaxed">Unlike standard LLMs, Yukti verifies every single claim against live bibliographic databases (ArXiv, PubMed, Semantic Scholar).</p>
-              </div>
-            </div>
-          </Step>
-          <Step>
-            <div className="p-8">
-              <h2 className="text-4xl font-black mb-6 tracking-tighter">Final Initialization</h2>
-              <p className="text-slate-400 mb-10">We are ready to ignite. What should our first research directive be?</p>
-              <div className="max-w-md mx-auto">
-                <input
-                  type="text"
-                  value={onboardingName}
-                  onChange={(e) => setOnboardingName(e.target.value)}
-                  placeholder="Input research domain..."
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl p-6 text-xl text-white outline-none focus:border-primary transition-all"
-                />
-              </div>
-            </div>
-          </Step>
-        </Stepper>
+        <div className="mb-8 flex items-center gap-3">
+          <div className="rounded-2xl bg-emerald-400/20 p-3 text-emerald-300">
+            <Sparkles size={20} />
+          </div>
+          <div>
+            <h1 className="font-outfit text-2xl font-black tracking-tight">Yukti Platform</h1>
+            <p className="text-xs uppercase tracking-widest text-slate-400">Research Control Access</p>
+          </div>
+        </div>
+
+        <div className="mb-6 flex gap-2 rounded-xl bg-slate-800/70 p-1 text-xs font-bold uppercase tracking-wider">
+          <button
+            type="button"
+            onClick={() => setMode('login')}
+            className={`flex-1 rounded-lg py-2 transition ${mode === 'login' ? 'bg-emerald-500/20 text-emerald-300' : 'text-slate-400 hover:text-white'}`}
+          >
+            Login
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('signup')}
+            className={`flex-1 rounded-lg py-2 transition ${mode === 'signup' ? 'bg-emerald-500/20 text-emerald-300' : 'text-slate-400 hover:text-white'}`}
+          >
+            Signup
+          </button>
+        </div>
+
+        <form onSubmit={onSubmit} className="space-y-4">
+          {mode === 'signup' && (
+            <input
+              type="text"
+              required
+              value={form.name}
+              onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+              placeholder="Full name"
+              className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm outline-none focus:border-emerald-400/60"
+            />
+          )}
+          <input
+            type="email"
+            required
+            value={form.email}
+            onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
+            placeholder="Academic email"
+            className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm outline-none focus:border-emerald-400/60"
+          />
+          <input
+            type="password"
+            required
+            value={form.password}
+            onChange={(e) => setForm((prev) => ({ ...prev, password: e.target.value }))}
+            placeholder="Password"
+            className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm outline-none focus:border-emerald-400/60"
+          />
+          <button
+            type="submit"
+            disabled={loading}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-400 px-4 py-3 text-sm font-black uppercase tracking-wider text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <ShieldCheck size={16} />
+            {loading ? 'Initializing...' : mode === 'signup' ? 'Create Account' : 'Enter Platform'}
+          </button>
+        </form>
       </motion.div>
     </div>
   );
+}
+
+function IntakeScreen({
+  user,
+  title,
+  setTitle,
+  mode,
+  setMode,
+  githubUrl,
+  setGithubUrl,
+  folderLabel,
+  onFolderChange,
+  onStart,
+  isStarting,
+  error,
+  systemStatus,
+  onLogout,
+}) {
+  return (
+    <div className={`${pageShell} min-h-screen p-6 md:p-10`}>
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-8">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.24em] text-emerald-300">Welcome to the Yukti Platform.</p>
+            <h1 className="mt-2 font-outfit text-3xl font-black tracking-tight md:text-4xl">Research Interface Initialization</h1>
+            <p className="mt-2 text-sm text-slate-400">
+              Greetings, Scholar. Let's initialize your research interface and walks through our autonomous orchestration.
+            </p>
+          </div>
+          <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-slate-900/70 px-4 py-3 text-xs">
+            <span className="font-bold text-slate-300">{user?.user?.name}</span>
+            <button
+              onClick={onLogout}
+              className="rounded-lg bg-slate-800 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-300 hover:bg-slate-700"
+            >
+              <LogOut size={12} className="mr-1 inline" /> Logout
+            </button>
+          </div>
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-5">
+          <div className="space-y-4 lg:col-span-2">
+            {guideSteps.map((item) => (
+              <div key={item.step} className="rounded-2xl border border-white/10 bg-slate-900/60 p-5">
+                <p className="text-xs font-black uppercase tracking-[0.22em] text-emerald-300">{item.step}</p>
+                <h2 className="mt-2 text-lg font-bold text-white">{item.title}</h2>
+                <p className="mt-1.5 text-sm leading-relaxed text-slate-400">{item.body}</p>
+              </div>
+            ))}
+          </div>
+
+          <form onSubmit={onStart} className="rounded-3xl border border-white/10 bg-slate-900/70 p-6 shadow-xl lg:col-span-3">
+            <div className="mb-6">
+              <h2 className="font-outfit text-2xl font-black tracking-tight">Input research domain...</h2>
+              <p className="mt-1 text-sm text-slate-400">Provide a paper title and one mandatory source type: GitHub link or local folder.</p>
+            </div>
+
+            <div className="space-y-5">
+              <div>
+                <label className="mb-2 block text-xs font-black uppercase tracking-[0.18em] text-slate-400">Title</label>
+                <input
+                  type="text"
+                  required
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Example: Trustworthy LLMs for Clinical Reasoning"
+                  className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm outline-none focus:border-emerald-400/60"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-xs font-black uppercase tracking-[0.18em] text-slate-400">Source (Mandatory)</label>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => setMode('github')}
+                    className={`rounded-xl border px-4 py-3 text-left transition ${mode === 'github' ? 'border-emerald-400/60 bg-emerald-500/10 text-emerald-200' : 'border-white/10 bg-slate-950/40 text-slate-300 hover:border-white/20'}`}
+                  >
+                    <Github size={16} className="mb-2" />
+                    <p className="text-sm font-bold">GitHub Link</p>
+                    <p className="text-xs text-slate-400">Analyze public repository</p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setMode('folder')}
+                    className={`rounded-xl border px-4 py-3 text-left transition ${mode === 'folder' ? 'border-emerald-400/60 bg-emerald-500/10 text-emerald-200' : 'border-white/10 bg-slate-950/40 text-slate-300 hover:border-white/20'}`}
+                  >
+                    <FolderOpen size={16} className="mb-2" />
+                    <p className="text-sm font-bold">Select Folder</p>
+                    <p className="text-xs text-slate-400">Folder only, not zip</p>
+                  </button>
+                </div>
+              </div>
+
+              {mode === 'github' ? (
+                <div>
+                  <label className="mb-2 block text-xs font-black uppercase tracking-[0.18em] text-slate-400">GitHub URL</label>
+                  <input
+                    type="url"
+                    required
+                    value={githubUrl}
+                    onChange={(e) => setGithubUrl(e.target.value)}
+                    placeholder="https://github.com/owner/repository"
+                    className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm outline-none focus:border-emerald-400/60"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className="mb-2 block text-xs font-black uppercase tracking-[0.18em] text-slate-400">Project Folder</label>
+                  <input
+                    type="file"
+                    webkitdirectory=""
+                    directory=""
+                    multiple
+                    onChange={onFolderChange}
+                    className="block w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-slate-300 file:mr-4 file:rounded-lg file:border-0 file:bg-emerald-400 file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-slate-950"
+                  />
+                  <p className="mt-2 text-xs text-slate-400">{folderLabel || 'No folder selected yet.'}</p>
+                </div>
+              )}
+
+              {error && (
+                <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</p>
+              )}
+
+              <div className="flex items-center justify-between gap-3 pt-2">
+                <div className="text-xs text-slate-500">
+                  <BookOpen size={14} className="mr-1 inline" />
+                  System status: {systemStatus?.available ? 'ready' : 'offline'}
+                </div>
+                <button
+                  type="submit"
+                  disabled={isStarting}
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-400 px-5 py-3 text-sm font-black uppercase tracking-wider text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isStarting ? 'Launching...' : 'Start Research'}
+                  <ArrowRight size={16} />
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const App = () => {
+  const [user, setUser] = useState(null);
+  const [authMode, setAuthMode] = useState('login');
+  const [authForm, setAuthForm] = useState({ name: '', email: '', password: '' });
+  const [authLoading, setAuthLoading] = useState(false);
+
+  const [query, setQuery] = useState('');
+  const [title, setTitle] = useState('');
+  const [inputMode, setInputMode] = useState('github'); // github | folder
+  const [githubUrl, setGithubUrl] = useState('');
+  const [folderFiles, setFolderFiles] = useState([]);
+  const [launchError, setLaunchError] = useState('');
+  const [isLaunching, setIsLaunching] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const [systemStatus, setSystemStatus] = useState(null);
+
+  const { connect, sendMessage, status, agents, logs, report, plan, sections, setSections, messages, sessionId } = useResearch();
+
+  useEffect(() => {
+    const fetchSystemStatus = async () => {
+      try {
+        const resp = await fetch('/api/status');
+        const data = await resp.json();
+        setSystemStatus(data.llm);
+      } catch {
+        setSystemStatus(null);
+      }
+    };
+    fetchSystemStatus();
+  }, []);
+
+  useEffect(() => {
+    if (status !== 'idle') {
+      setIsSearching(true);
+    }
+  }, [status]);
+
+  const folderLabel = useMemo(() => {
+    if (!folderFiles.length) return '';
+    const relPath = folderFiles[0]?.webkitRelativePath || '';
+    const root = relPath.split('/')[0] || 'Selected folder';
+    return `${root} (${folderFiles.length} files selected)`;
+  }, [folderFiles]);
+
+  const handleAuthSubmit = (e) => {
+    e.preventDefault();
+    setAuthLoading(true);
+    window.setTimeout(() => {
+      const displayName = authForm.name.trim() || authForm.email.split('@')[0] || 'Scholar';
+      setUser({
+        status: 'success',
+        user: {
+          name: displayName,
+          email: authForm.email,
+          role: 'academic',
+        },
+        token: `session-${Date.now()}`,
+      });
+      setAuthLoading(false);
+    }, 400);
+  };
+
+  const handleFolderChange = (e) => {
+    const files = Array.from(e.target.files || []);
+    setFolderFiles(files);
+    setLaunchError('');
+  };
+
+  const handleStartResearch = async (e) => {
+    e.preventDefault();
+    if (!user) return;
+
+    const cleanTitle = title.trim();
+    if (!cleanTitle) {
+      setLaunchError('Title is required.');
+      return;
+    }
+
+    if (inputMode === 'github' && !githubUrl.trim()) {
+      setLaunchError('GitHub URL is mandatory when GitHub source is selected.');
+      return;
+    }
+
+    if (inputMode === 'folder' && folderFiles.length === 0) {
+      setLaunchError('Please select a folder. Zip upload is not used here.');
+      return;
+    }
+
+    setIsLaunching(true);
+    setLaunchError('');
+
+    try {
+      if (inputMode === 'github') {
+        const url = githubUrl.trim();
+        const res = await fetch('/api/github/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ repo_url: url, existing_title: cleanTitle }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'GitHub analysis failed');
+        const researchQuery = cleanTitle || data.data?.title || url;
+        setQuery(researchQuery);
+        connect(researchQuery);
+      } else {
+        const folderContext = folderLabel ? ` (${folderLabel})` : '';
+        const researchQuery = `${cleanTitle}${folderContext}`;
+        setQuery(researchQuery);
+        connect(researchQuery);
+      }
+      setIsSearching(true);
+    } catch (err) {
+      setLaunchError(String(err));
+    } finally {
+      setIsLaunching(false);
+    }
+  };
+
+  if (!user) {
+    return (
+      <AuthScreen
+        mode={authMode}
+        setMode={setAuthMode}
+        form={authForm}
+        setForm={setAuthForm}
+        onSubmit={handleAuthSubmit}
+        loading={authLoading}
+      />
+    );
+  }
+
+  if (!isSearching) {
+    return (
+      <IntakeScreen
+        user={user}
+        title={title}
+        setTitle={setTitle}
+        mode={inputMode}
+        setMode={setInputMode}
+        githubUrl={githubUrl}
+        setGithubUrl={setGithubUrl}
+        folderLabel={folderLabel}
+        onFolderChange={handleFolderChange}
+        onStart={handleStartResearch}
+        isStarting={isLaunching}
+        error={launchError}
+        systemStatus={systemStatus}
+        onLogout={() => {
+          setUser(null);
+          setIsSearching(false);
+          setSections([]);
+          setQuery('');
+        }}
+      />
+    );
+  }
 
   return (
-    <div className="min-h-screen font-inter text-slate-100 selection:bg-primary/40 overflow-x-hidden">
-      <Background />
-
-      <AnimatePresence mode="wait">
-        {!isSearching ? (
-          <motion.div
-            key="hero"
-            initial={{ opacity: 0, scale: 1.1 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95, filter: 'blur(20px)' }}
-            transition={{ duration: 0.8, ease: "circOut" }}
-            className="min-h-screen flex flex-col items-center justify-center p-6 text-center z-10"
-          >
-            <div className="absolute top-10 right-10 flex items-center gap-4">
-              <button
-                onClick={() => setShowSystemModal(true)}
-                className="glass p-3 rounded-xl hover:bg-white/10 transition-all border border-white/5 relative group"
-              >
-                <Cpu size={18} className={systemStatus?.available ? 'text-emerald-400' : 'text-slate-500'} />
-                {systemStatus?.available && (
-                  <span className="absolute top-2 right-2 flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
-                  </span>
-                )}
-              </button>
-              {user ? (
-                <div className="glass px-4 py-2 rounded-xl flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-xs font-bold text-primary">
-                    {user.user.name[0]}
-                  </div>
-                  <span className="text-xs font-bold">{user.user.name}</span>
-                  <button onClick={() => setUser(null)} className="p-2 hover:text-red-400 transition-colors"><LogOut size={16} /></button>
-                </div>
-              ) : (
-                <button onClick={() => setView('auth')} className="glass px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-white/10 transition-all border border-white/5">Sign In</button>
-              )}
-            </div>
-
-            <GradientText
-              colors={["#6366f1", "#a855f7", "#22d3ee", "#6366f1"]}
-              animationSpeed={10}
-              className="text-7xl md:text-9xl font-black mb-10 tracking-tighter font-outfit leading-[0.85] drop-shadow-[0_0_30px_rgba(99,102,241,0.2)]"
-            >
-              YUKTI.AI
-            </GradientText>
-
-            <p className="text-lg md:text-xl text-slate-400 mb-12 max-w-2xl font-light tracking-wide leading-relaxed font-outfit">
-              The world's first <span className="text-white font-medium">autonomous research machine</span>. Deeply logical, perpetually verified.
-            </p>
-
-            {/* Mode toggle */}
-            <div className="flex gap-1 p-1 rounded-xl bg-slate-900/60 border border-white/5 backdrop-blur mb-4">
-              <button
-                type="button"
-                onClick={() => { setInputMode('topic'); setGithubError(null); }}
-                className={`flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-bold uppercase tracking-widest transition-all ${inputMode === 'topic' ? 'bg-primary/20 text-primary border border-primary/30' : 'text-slate-500 hover:text-slate-300'}`}
-              >
-                <BookOpen size={14} /> Topic Research
-              </button>
-              <button
-                type="button"
-                onClick={() => { setInputMode('github'); setGithubError(null); }}
-                className={`flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-bold uppercase tracking-widest transition-all ${inputMode === 'github' ? 'bg-violet-500/20 text-violet-400 border border-violet-500/30' : 'text-slate-500 hover:text-slate-300'}`}
-              >
-                <Github size={14} /> GitHub Project
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="relative w-full max-w-2xl group">
-              <div className="absolute -inset-2 bg-gradient-to-r from-primary via-secondary to-accent rounded-3xl blur-2xl opacity-10 group-hover:opacity-30 transition duration-1000 group-hover:duration-200" />
-
-              {inputMode === 'topic' ? (
-                <div className="relative flex items-center bg-slate-900/40 backdrop-blur-3xl border border-white/10 rounded-2xl p-2 shadow-3xl">
-                  <input
-                    type="text"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder={user ? "Ask Yukti to illuminate any topic..." : "Login to use the AI Research Agent..."}
-                    className="flex-1 bg-transparent py-4 px-6 text-xl outline-none font-light placeholder:text-slate-600"
-                  />
-                  <button
-                    type="submit"
-                    className="px-8 py-4 rounded-xl bg-gradient-to-r from-primary to-secondary text-white flex items-center gap-2 hover:scale-[1.02] active:scale-95 transition-all shadow-2xl shadow-primary/40 group/btn overflow-hidden relative"
-                  >
-                    <div className="absolute inset-0 bg-white/10 translate-y-full group-hover/btn:translate-y-0 transition-transform" />
-                    {user ? <Search size={20} className="relative z-10" /> : <Shield size={20} className="relative z-10" />}
-                    <span className="font-black text-lg tracking-tight relative z-10">{user ? 'IGNITE' : 'LOGIN'}</span>
-                  </button>
-                </div>
-              ) : (
-                <div className="relative flex flex-col gap-2 bg-slate-900/40 backdrop-blur-3xl border border-violet-500/20 rounded-2xl p-4 shadow-3xl">
-                  <div className="flex items-center gap-2 px-2 py-1">
-                    <Github size={16} className="text-violet-400 flex-shrink-0" />
-                    <input
-                      type="url"
-                      value={githubUrl}
-                      onChange={(e) => { setGithubUrl(e.target.value); setGithubError(null); }}
-                      placeholder="https://github.com/owner/repository"
-                      required
-                      className="flex-1 bg-transparent py-3 text-lg outline-none font-light placeholder:text-slate-600 text-white"
-                    />
-                  </div>
-                  <div className="h-px bg-white/5" />
-                  <div className="flex items-center gap-2 px-2 py-1">
-                    <Tag size={14} className="text-slate-500 flex-shrink-0" />
-                    <input
-                      type="text"
-                      value={githubTitle}
-                      onChange={(e) => setGithubTitle(e.target.value)}
-                      placeholder="Paper title (optional — will be auto-generated)"
-                      className="flex-1 bg-transparent py-2 text-sm outline-none font-light placeholder:text-slate-600 text-slate-300"
-                    />
-                  </div>
-                  {githubError && (
-                    <p className="text-xs text-red-400 px-2 pb-1">{githubError}</p>
-                  )}
-                  <button
-                    type="submit"
-                    disabled={isAnalyzingGithub || !githubUrl.trim() || !user}
-                    className="mt-1 px-8 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-secondary text-white flex items-center justify-center gap-2 hover:scale-[1.01] active:scale-95 transition-all shadow-2xl shadow-violet-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isAnalyzingGithub ? (
-                      <>
-                        <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        <span className="font-black tracking-tight">ANALYSING REPO…</span>
-                      </>
-                    ) : (
-                      <>
-                        {user ? <Github size={18} /> : <Shield size={18} />}
-                        <span className="font-black tracking-tight">{user ? 'ANALYSE & RESEARCH' : 'LOGIN TO CONTINUE'}</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              )}
-            </form>
-
-            <div className="mt-12">
-              {inputMode === 'topic' ? (
-                <div className="flex flex-wrap justify-center gap-3 opacity-40 hover:opacity-100 transition-opacity duration-500">
-                  {['Fusion Diagnostics', 'Quantum Ethics', 'Post-Scarcity Economics', 'Bio-Neural Interfaces'].map(topic => (
-                    <button
-                      key={topic}
-                      onClick={() => setQuery(topic)}
-                      className="px-5 py-2 rounded-full border border-white/5 bg-white/[0.02] text-[10px] font-medium hover:border-primary/50 hover:bg-primary/10 hover:text-white transition-all transform hover:-translate-y-1"
-                    >
-                      {topic}
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div className="flex flex-wrap justify-center gap-3 opacity-40 hover:opacity-100 transition-opacity duration-500">
-                  {[
-                    { label: 'huggingface/transformers', url: 'https://github.com/huggingface/transformers' },
-                    { label: 'pytorch/pytorch', url: 'https://github.com/pytorch/pytorch' },
-                    { label: 'openai/whisper', url: 'https://github.com/openai/whisper' },
-                  ].map(ex => (
-                    <button
-                      key={ex.label}
-                      onClick={() => setGithubUrl(ex.url)}
-                      className="px-5 py-2 rounded-full border border-white/5 bg-white/[0.02] text-[10px] font-medium hover:border-violet-500/50 hover:bg-violet-500/10 hover:text-white transition-all transform hover:-translate-y-1"
-                    >
-                      <Github size={10} className="inline mr-1" />{ex.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </motion.div>
-        ) : (
-          <motion.div
-            key="workspace"
-            initial={{ opacity: 0, filter: 'blur(10px)' }}
-            animate={{ opacity: 1, filter: 'blur(0px)' }}
-            transition={{ duration: 0.4 }}
-          >
-            <ResearchWorkspace
-              query={query}
-              sections={sections}
-              setSections={setSections}
-              plan={plan}
-              status={status}
-              sessionId={sessionId}
-              agents={agents}
-              logs={logs}
-              report={report}
-              messages={messages}
-              sendMessage={sendMessage}
-              onNewResearch={() => { setIsSearching(false); setSections([]); }}
-              systemStatus={systemStatus}
-              onOpenSystemModal={() => setShowSystemModal(true)}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {showSystemModal && (
-          <SystemModal
-            status={systemStatus}
-            isOptimizing={isOptimizing}
-            onOptimize={runSystemOptimization}
-            onClose={() => setShowSystemModal(false)}
-          />
-        )}
-      </AnimatePresence>
-    </div>
+    <AnimatePresence mode="wait">
+      <motion.div
+        key="workspace"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+      >
+        <ResearchWorkspace
+          query={query}
+          sections={sections}
+          setSections={setSections}
+          plan={plan}
+          status={status}
+          sessionId={sessionId}
+          agents={agents}
+          logs={logs}
+          report={report}
+          messages={messages}
+          sendMessage={sendMessage}
+          onNewResearch={() => {
+            setIsSearching(false);
+            setSections([]);
+            setLaunchError('');
+          }}
+          systemStatus={systemStatus}
+          onOpenSystemModal={() => {}}
+        />
+      </motion.div>
+    </AnimatePresence>
   );
 };
 

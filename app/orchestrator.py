@@ -25,6 +25,7 @@ from app.agents.researchers import (
 from app.agents.aggregator import ContentAggregator
 from app.agents.synthesizer import SynthesizerAgent
 from app.agents.publisher import PublisherAgent
+from app.agents.verification_agent import VerificationAgent
 from app.agents.llm_client import OllamaClient
 from app.utils.references import generate_references
 
@@ -58,6 +59,7 @@ class ResearchOrchestrator:
         self.citation_agent = CitationAgent()
         self.aggregator = ContentAggregator()
         self.synthesizer = SynthesizerAgent(self.llm_client)
+        self.verifier = VerificationAgent(str(self.output_dir))
         self.publisher = PublisherAgent(str(self.output_dir))
         
         # Session state
@@ -102,7 +104,7 @@ class ResearchOrchestrator:
             "agents": [
                 "PlannerAgent", "WebContextAgent", "AcademicResearchAgent",
                 "DocumentProcessingAgent", "CitationAgent", "ContentAggregator",
-                "SynthesizerAgent", "PublisherAgent"
+                "SynthesizerAgent", "VerificationAgent", "PublisherAgent"
             ]
         }
     
@@ -219,9 +221,44 @@ class ResearchOrchestrator:
             # Step 5: Publishing
             # ========================================
             if callback:
-                await callback("orchestrator", "step", "Step 5/5: Publishing report...")
+                await callback("orchestrator", "step", "Step 5/5: Verifying sources and publishing report...")
+
+            verification = {
+                "summary": {
+                    "sections_complete": False,
+                    "references_present": False,
+                    "inline_citation_count": 0,
+                    "reference_count": 0,
+                    "missing_reference_numbers": [],
+                    "uncited_reference_numbers": [],
+                    "numbering_contiguous": False,
+                    "source_count": 0,
+                },
+                "source_log": None,
+                "verification_log": None,
+            }
+
+            try:
+                verification = await self.verifier.verify(
+                    synthesis=synthesis,
+                    aggregated_data=aggregated,
+                    citations=citations,
+                    session_id=session_id,
+                    callback=callback,
+                )
+                self._update_session(session_id, "verification_complete", verification.get("summary", {}))
+            except Exception as exc:
+                logger.warning("Verification agent failed for session %s: %s", session_id, exc)
+                if callback:
+                    await callback("verifier", "error", f"Verification failed: {exc}")
             
             published = await self.publisher.publish(synthesis, session_id, callback)
+
+            files = dict(published.get("files", {}))
+            if verification.get("source_log"):
+                files["sources_log"] = verification["source_log"]
+            if verification.get("verification_log"):
+                files["verification_log"] = verification["verification_log"]
             
             # Calculate duration
             duration = (datetime.now() - start_time).total_seconds()
@@ -246,7 +283,8 @@ class ResearchOrchestrator:
                     "sections_count": len(synthesis.get("sections", [])),
                     "duration_seconds": round(duration, 1)
                 },
-                "files": published.get("files", {}),
+                "files": files,
+                "verification": verification.get("summary", {}),
                 "plan": plan,
                 "llm_status": self.llm_client.get_status(),
                 "timestamp": datetime.now().isoformat()
