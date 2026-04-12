@@ -8,9 +8,15 @@ generates final report, and handles export (PDF/Word).
 import logging
 import json
 import os
+import re
+import html
+import unicodedata
 from typing import Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
+
+from app.agents.keyword_agent import KeywordAgent
+from app.utils.humanizer import BasicAcademicHumanizer
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +35,8 @@ class PublisherAgent:
         self.name = "Publisher Agent"
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
+        self.humanizer = BasicAcademicHumanizer()
+        self.keyword_agent = KeywordAgent()
     
     async def publish(self, synthesis: Dict[str, Any], session_id: str, callback=None) -> Dict[str, Any]:
         """
@@ -112,12 +120,18 @@ class PublisherAgent:
     def _generate_latex(self, synthesis: Dict, output_path: str):
         """Generate a LaTeX file following the IEEE pattern."""
         title = synthesis.get("title", "Research Report")
-        abstract = synthesis.get("abstract", "")
+        abstract = self.humanizer.humanize(synthesis.get("abstract", ""))
         sections = synthesis.get("sections", [])
+        keywords = self.keyword_agent.extract_keywords(
+            title=title,
+            abstract=abstract,
+            provided=synthesis.get("keywords", []),
+        )
         
         # Simple LaTeX escape function
         def tex_escape(text):
-            return text.replace('&', '\\&').replace('%', '\\%').replace('$', '\\$').replace('#', '\\#').replace('_', '\\_').replace('{', '\\{').replace('}', '\\}')
+            clean = self._normalize_latex_text(str(text or ""))
+            return clean.replace('&', '\\&').replace('%', '\\%').replace('$', '\\$').replace('#', '\\#').replace('_', '\\_').replace('{', '\\{').replace('}', '\\}')
 
         latex_template = r"""\documentclass[conference]{IEEEtran}
 \IEEEoverridecommandlockouts
@@ -126,6 +140,7 @@ class PublisherAgent:
 \usepackage{algorithmic}
 \usepackage{graphicx}
 \usepackage{textcomp}
+\usepackage{hyperref}
 \def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
     T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
 \begin{document}
@@ -145,29 +160,126 @@ Chennai, India}
 """ + tex_escape(abstract) + r"""
 \end{abstract}
 
-\begin{IEEEkeywords}
-Academic Research, AI Synthesis, Autonomous Agents, Yukti AI
-\end{IEEEkeywords}
+\noindent\textbf{Keywords:} """ + tex_escape(", ".join(keywords)) + r"""
 
 """
-        # Add sections
+
+        bibliography_entries = []
+
+        # Add sections (skip References here; it is rendered via IEEE bibliography)
         for section in sections:
-            section_title = tex_escape(section.get("title", "Untitled Section"))
-            section_content = tex_escape(section.get("content", ""))
+            raw_title = str(section.get("title", "Untitled Section"))
+            raw_key = str(section.get("key", "")).strip().lower()
+            raw_content = str(section.get("content", ""))
+
+            if raw_key == "references" or raw_title.strip().lower() == "references":
+                bibliography_entries.extend(self._extract_reference_lines(raw_content))
+                continue
+
+            section_title = tex_escape(raw_title)
+            section_content = tex_escape(self.humanizer.humanize(raw_content))
             latex_template += f"\\section{{{section_title}}}\n{section_content}\n\n"
 
-        latex_template += r"""
-\section*{Acknowledgment}
-This research was generated autonomously by Yukti Research AI for Prince PROTOTHON'26.
-
-\begin{thebibliography}{00}
-\bibitem{b1} Generated via Yukti Research Agent Pipeline using ArXiv and Semantic Scholar sources.
-\end{thebibliography}
-
-\end{document}
-"""
+        latex_template += self._build_ieee_bibliography_block(bibliography_entries)
+        latex_template += "\n\n\\end{document}\n"
+        latex_template = self._normalize_latex_text(latex_template)
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(latex_template)
+
+    @staticmethod
+    def _extract_reference_lines(text: str):
+        refs = []
+        for raw in (text or "").splitlines():
+            line = raw.strip()
+            if not line:
+                continue
+            if line.lower().startswith("## references"):
+                continue
+            if line.startswith("- "):
+                line = line[2:].strip()
+
+            if re.match(r"^\[\d+\]\s+", line):
+                refs.append(line)
+                continue
+
+            ordered = re.match(r"^(\d+)\.\s+(.+)$", line)
+            if ordered:
+                refs.append(f"[{ordered.group(1)}] {ordered.group(2).strip()}")
+        return refs
+
+    def _build_ieee_bibliography_block(self, entries):
+        if not entries:
+            return ""
+
+        deduped = []
+        seen = set()
+        for entry in entries:
+            norm = re.sub(r"\s+", " ", str(entry)).strip().lower()
+            if not norm or norm in seen:
+                continue
+            seen.add(norm)
+            deduped.append(str(entry))
+
+        if not deduped:
+            return ""
+
+        lines = ["\\begin{thebibliography}{99}"]
+        for idx, entry in enumerate(deduped, start=1):
+            clean = re.sub(r"^\[\d+\]\s*", "", entry).strip()
+            lines.append(f"\\bibitem{{ref{idx}}} {self._escape_bibliography_text(clean)}")
+        lines.append("\\end{thebibliography}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _escape_bibliography_text(text: str) -> str:
+        escaped = PublisherAgent._normalize_latex_text(text)
+        for src, dst in [
+            ("\\", r"\textbackslash{}"),
+            ("&", r"\&"),
+            ("%", r"\%"),
+            ("$", r"\$"),
+            ("#", r"\#"),
+            ("_", r"\_"),
+            ("{", r"\{"),
+            ("}", r"\}"),
+        ]:
+            escaped = escaped.replace(src, dst)
+        return escaped
+
+    @staticmethod
+    def _normalize_latex_text(text: str) -> str:
+        """Normalize problematic Unicode/entities that can break pdflatex."""
+        if not text:
+            return ""
+
+        normalized = html.unescape(str(text))
+        replacements = {
+            "\u00a0": " ",
+            "\u202f": " ",
+            "\u2011": "-",
+            "\u2013": "-",
+            "\u2014": "--",
+            "\u2018": "'",
+            "\u2019": "'",
+            "\u201c": '"',
+            "\u201d": '"',
+            "\u03b1": "alpha",
+            "\u03b2": "beta",
+            "\u03b3": "gamma",
+            "\u03bb": "lambda",
+            "\u03bc": "mu",
+            "\u03c3": "sigma",
+            "\ufeff": "",
+        }
+        for src, dst in replacements.items():
+            normalized = normalized.replace(src, dst)
+
+        normalized = unicodedata.normalize("NFKD", normalized)
+        normalized = normalized.encode("ascii", "ignore").decode("ascii")
+        normalized = "".join(
+            ch for ch in normalized if ch in "\n\r\t" or 32 <= ord(ch) <= 126
+        )
+        return normalized
 
     def _generate_pdf(self, markdown_text: str, title: str, output_path: str):
         """Generate a native PDF from markdown text."""

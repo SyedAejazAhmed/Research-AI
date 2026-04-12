@@ -23,7 +23,7 @@ const statusMeta = {
     analyzing:  { color: 'border-amber-500/40 bg-amber-500/5', dot: 'bg-amber-400 animate-pulse', text: 'text-amber-300', badge: 'RUNNING' },
     active:     { color: 'border-primary/40 bg-primary/5', dot: 'bg-primary animate-pulse', text: 'text-primary', badge: 'RUNNING' },
     starting:   { color: 'border-blue-500/40 bg-blue-500/5', dot: 'bg-blue-400 animate-pulse', text: 'text-blue-300', badge: 'STARTING' },
-    generating: { color: 'border-purple-500/40 bg-purple-500/5', dot: 'bg-purple-400 animate-pulse', text: 'text-purple-300', badge: 'GENERATING' },
+    generating: { color: 'border-emerald-500/40 bg-emerald-500/5', dot: 'bg-emerald-400 animate-pulse', text: 'text-emerald-300', badge: 'GENERATING' },
     compiling:  { color: 'border-cyan-500/40 bg-cyan-500/5', dot: 'bg-cyan-400 animate-pulse', text: 'text-cyan-300', badge: 'COMPILING' },
     step:       { color: 'border-primary/40 bg-primary/5', dot: 'bg-primary animate-pulse', text: 'text-primary', badge: 'ACTIVE' },
     completed:  { color: 'border-emerald-500/30 bg-emerald-500/5', dot: 'bg-emerald-400', text: 'text-emerald-400', badge: 'DONE' },

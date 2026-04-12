@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowRight, BookOpen, FolderOpen, Github, LogOut, ShieldCheck, Sparkles } from 'lucide-react';
+import {
+  ArrowRight,
+  BookOpen,
+  FolderOpen,
+  Github,
+  Leaf,
+  LogOut,
+  ShieldCheck,
+  Sparkles,
+} from 'lucide-react';
 import { useResearch } from './hooks/useResearch';
 import ResearchWorkspace from './components/ResearchWorkspace';
 
@@ -23,9 +32,93 @@ const guideSteps = [
 ];
 
 const pageShell =
-  'min-h-screen bg-[radial-gradient(circle_at_20%_20%,rgba(16,185,129,0.14),transparent_34%),radial-gradient(circle_at_80%_10%,rgba(56,189,248,0.12),transparent_30%),linear-gradient(180deg,#060f1c_0%,#020617_52%,#01020a_100%)] text-slate-100';
+  'min-h-screen bg-[radial-gradient(circle_at_16%_14%,rgba(16,185,129,0.18),transparent_34%),radial-gradient(circle_at_82%_8%,rgba(52,211,153,0.14),transparent_30%),linear-gradient(180deg,#05120e_0%,#02110a_48%,#010a06_100%)] text-slate-100';
 
-function AuthScreen({ mode, setMode, form, setForm, onSubmit, loading }) {
+function BrandMark() {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="rounded-2xl bg-emerald-400/20 p-3 text-emerald-300">
+        <Leaf size={18} />
+      </div>
+      <div>
+        <p className="font-outfit text-xl font-black tracking-tight">Yukti.AI</p>
+        <p className="text-[10px] uppercase tracking-[0.2em] text-emerald-300/70">Research Intelligence</p>
+      </div>
+    </div>
+  );
+}
+
+function LandingScreen({ onLogin, onSignup }) {
+  return (
+    <div className={`${pageShell} relative overflow-hidden p-6 md:p-10`}>
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(120deg,rgba(16,185,129,0.04)_0%,transparent_40%,rgba(52,211,153,0.06)_100%)]" />
+
+      <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-10">
+        <header className="flex flex-wrap items-center justify-between gap-4">
+          <BrandMark />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onLogin}
+              className="rounded-xl border border-emerald-300/30 bg-emerald-500/10 px-4 py-2 text-xs font-black uppercase tracking-wider text-emerald-200 transition hover:bg-emerald-500/20"
+            >
+              Login
+            </button>
+            <button
+              type="button"
+              onClick={onSignup}
+              className="rounded-xl bg-emerald-400 px-4 py-2 text-xs font-black uppercase tracking-wider text-slate-950 transition hover:bg-emerald-300"
+            >
+              Signup
+            </button>
+          </div>
+        </header>
+
+        <motion.section
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="grid gap-8 rounded-3xl border border-emerald-300/15 bg-slate-900/60 p-7 shadow-2xl backdrop-blur md:grid-cols-2 md:p-10"
+        >
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.24em] text-emerald-300">Autonomous Academic Engine</p>
+            <h1 className="mt-4 font-outfit text-4xl font-black leading-tight tracking-tight md:text-5xl">
+              Analyze repositories first, then orchestrate verified research.
+            </h1>
+            <p className="mt-4 text-sm leading-relaxed text-slate-300">
+              Yukti starts with repository structure intelligence, extracts implementation context, and then launches
+              evidence-grounded paper generation with references.
+            </p>
+            <div className="mt-6 flex flex-wrap items-center gap-3 text-xs text-emerald-200">
+              <span className="rounded-full border border-emerald-300/30 bg-emerald-500/10 px-3 py-1">Green platform mode</span>
+              <span className="rounded-full border border-emerald-300/30 bg-emerald-500/10 px-3 py-1">GitHub + Folder ingestion</span>
+              <span className="rounded-full border border-emerald-300/30 bg-emerald-500/10 px-3 py-1">Live citation pipeline</span>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-emerald-300/15 bg-slate-950/55 p-5">
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-emerald-300">Startup Sequence</p>
+            <ol className="mt-4 space-y-3 text-sm text-slate-300">
+              <li>1. Authenticate with Login or Signup.</li>
+              <li>2. Provide title plus GitHub URL or folder upload.</li>
+              <li>3. Repo analyzer maps structure and summarizes implementation.</li>
+              <li>4. Research orchestration starts with source-grounded context.</li>
+            </ol>
+            <button
+              type="button"
+              onClick={onLogin}
+              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-emerald-400 px-4 py-2.5 text-xs font-black uppercase tracking-wider text-slate-950 transition hover:bg-emerald-300"
+            >
+              Enter Platform
+              <ArrowRight size={15} />
+            </button>
+          </div>
+        </motion.section>
+      </div>
+    </div>
+  );
+}
+
+function AuthScreen({ mode, setMode, form, setForm, onSubmit, loading, onBack }) {
   return (
     <div className={`${pageShell} flex items-center justify-center p-6`}>
       <motion.div
@@ -59,6 +152,14 @@ function AuthScreen({ mode, setMode, form, setForm, onSubmit, loading }) {
             Signup
           </button>
         </div>
+
+        <button
+          type="button"
+          onClick={onBack}
+          className="mb-4 text-xs font-bold uppercase tracking-wider text-slate-400 transition hover:text-emerald-300"
+        >
+          Back to landing
+        </button>
 
         <form onSubmit={onSubmit} className="space-y-4">
           {mode === 'signup' && (
@@ -252,6 +353,7 @@ const App = () => {
   const [authMode, setAuthMode] = useState('login');
   const [authForm, setAuthForm] = useState({ name: '', email: '', password: '' });
   const [authLoading, setAuthLoading] = useState(false);
+  const [entryView, setEntryView] = useState('landing'); // landing | auth
 
   const [query, setQuery] = useState('');
   const [title, setTitle] = useState('');
@@ -306,13 +408,26 @@ const App = () => {
         token: `session-${Date.now()}`,
       });
       setAuthLoading(false);
+      setEntryView('landing');
     }, 400);
+  };
+
+  const openAuth = (mode) => {
+    setAuthMode(mode);
+    setEntryView('auth');
   };
 
   const handleFolderChange = (e) => {
     const files = Array.from(e.target.files || []);
     setFolderFiles(files);
     setLaunchError('');
+  };
+
+  const buildResearchPrompt = (titleText, analysisData) => {
+    const cleanTitle = titleText.trim();
+    const summary = String(analysisData?.summary || '').replace(/\s+/g, ' ').trim();
+    if (!summary) return cleanTitle;
+    return `${cleanTitle}\n\nRepository context summary:\n${summary.slice(0, 1200)}`;
   };
 
   const handleStartResearch = async (e) => {
@@ -339,33 +454,66 @@ const App = () => {
     setLaunchError('');
 
     try {
+      let analysisData = null;
+
       if (inputMode === 'github') {
         const url = githubUrl.trim();
-        const res = await fetch('/api/github/analyze', {
+        const res = await fetch('/api/repo/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ repo_url: url, existing_title: cleanTitle }),
+          body: JSON.stringify({
+            repo_url: url,
+            existing_title: cleanTitle,
+            output_dir: './outputs/GitHub',
+          }),
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'GitHub analysis failed');
-        const researchQuery = cleanTitle || data.data?.title || url;
-        setQuery(researchQuery);
-        connect(researchQuery);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.status !== 'success') {
+          throw new Error(data.detail || 'Repository analysis failed for GitHub URL.');
+        }
+        analysisData = data.data || null;
       } else {
-        const folderContext = folderLabel ? ` (${folderLabel})` : '';
-        const researchQuery = `${cleanTitle}${folderContext}`;
-        setQuery(researchQuery);
-        connect(researchQuery);
+        const formData = new FormData();
+        formData.append('existing_title', cleanTitle);
+        formData.append('output_dir', './outputs/GitHub');
+        for (const file of folderFiles) {
+          formData.append('files', file, file.webkitRelativePath || file.name);
+        }
+
+        const res = await fetch('/api/repo/analyze-folder', {
+          method: 'POST',
+          body: formData,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.status !== 'success') {
+          throw new Error(data.detail || 'Repository analysis failed for folder upload.');
+        }
+        analysisData = data.data || null;
       }
+
+      const displayTitle = (analysisData?.title || cleanTitle).trim();
+      const researchPrompt = buildResearchPrompt(displayTitle, analysisData);
+      setTitle(displayTitle);
+      setQuery(displayTitle);
+      connect(researchPrompt);
       setIsSearching(true);
     } catch (err) {
-      setLaunchError(String(err));
+      setLaunchError(err?.message || String(err));
     } finally {
       setIsLaunching(false);
     }
   };
 
   if (!user) {
+    if (entryView === 'landing') {
+      return (
+        <LandingScreen
+          onLogin={() => openAuth('login')}
+          onSignup={() => openAuth('signup')}
+        />
+      );
+    }
+
     return (
       <AuthScreen
         mode={authMode}
@@ -374,6 +522,7 @@ const App = () => {
         setForm={setAuthForm}
         onSubmit={handleAuthSubmit}
         loading={authLoading}
+        onBack={() => setEntryView('landing')}
       />
     );
   }
@@ -396,9 +545,14 @@ const App = () => {
         systemStatus={systemStatus}
         onLogout={() => {
           setUser(null);
+          setEntryView('landing');
           setIsSearching(false);
           setSections([]);
           setQuery('');
+          setTitle('');
+          setGithubUrl('');
+          setFolderFiles([]);
+          setLaunchError('');
         }}
       />
     );

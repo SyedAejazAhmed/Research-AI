@@ -15,6 +15,7 @@ import json
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from app.utils.cache import cache
+from app.utils.references import is_verified_academic_paper
 
 logger = logging.getLogger(__name__)
 
@@ -440,38 +441,54 @@ class CitationAgent:
     def __init__(self):
         self.name = "Citation Agent"
     
-    async def generate_citations(self, papers: List[Dict], style: str = "APA", callback=None) -> Dict[str, Any]:
+    async def generate_citations(self, papers: List[Dict], style: str = "IEEE", callback=None) -> Dict[str, Any]:
         """Generate formatted citations for all papers."""
         if callback:
             await callback("citation_agent", "generating", "Generating citations...")
         
         citations = []
         verified_count = 0
+        filtered_non_papers = 0
         
         for i, paper in enumerate(papers):
-            citation = self._format_citation(paper, i + 1, style)
-            
-            # Verify DOI
-            has_doi = bool(paper.get("doi"))
-            if has_doi:
+            verification = is_verified_academic_paper(paper)
+            if not verification.get("is_academic_paper"):
+                filtered_non_papers += 1
+                continue
+
+            citation_number = len(citations) + 1
+            citation = self._format_citation(paper, citation_number, style)
+
+            is_verified = bool(
+                verification.get("doi_valid")
+                or verification.get("scholarly_domain")
+                or paper.get("doi")
+            )
+            if is_verified:
                 verified_count += 1
             
             citations.append({
-                "number": i + 1,
+                "number": citation_number,
                 "formatted": citation,
                 "doi": paper.get("doi", ""),
-                "verified": has_doi,
+                "verified": is_verified,
+                "verification": verification,
                 "paper": paper
             })
         
         if callback:
-            await callback("citation_agent", "completed", f"Generated {len(citations)} citations ({verified_count} DOI-verified)")
+            await callback(
+                "citation_agent",
+                "completed",
+                f"Generated {len(citations)} citations ({verified_count} verified, {filtered_non_papers} non-paper items filtered).",
+            )
         
         return {
             "agent": self.name,
             "citations": citations,
             "total": len(citations),
             "verified": verified_count,
+            "filtered_non_papers": filtered_non_papers,
             "style": style,
             "formatted_text": self._build_reference_section(citations),
             "timestamp": datetime.now().isoformat()

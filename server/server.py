@@ -8,12 +8,15 @@ import asyncio
 import json
 import logging
 import os
+import re
+import shutil
+import tempfile
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, File, Form, UploadFile
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,6 +25,12 @@ from pydantic import BaseModel, Field
 from app.orchestrator import ResearchOrchestrator
 from app.agents.llm_client import OllamaClient
 from app.utils.references import DEFAULT_LIMIT, DEFAULT_STYLE, generate_references, pyzotero_capabilities
+from .repo_analysis_service import (
+    RepoAnalysisError,
+    analyze_github_repository,
+    analyze_local_repository,
+    analyze_repo_path,
+)
 from .writing_service import WritingService
 
 # Setup logging
@@ -114,8 +123,10 @@ class ExportRequest(BaseModel):
 class WriteRequest(BaseModel):
     session_id: str
     compile_pdf: bool = True
-    template: str = "ieee"   # ieee | article | acm
-    author: str = "Yukti Research AI"
+    template: str = "ieee"   # allowed: ieee
+    author: str = ""
+    use_multi_agent_writer: bool = False
+    allow_fallback_pdf: bool = False
 
 
 class PartialWriteRequest(BaseModel):
@@ -126,8 +137,37 @@ class PartialWriteRequest(BaseModel):
     citations: Dict[str, Any] = {}
     compile_pdf: bool = True
     template: str = "ieee"
-    author: str = "Yukti Research AI"
+    author: str = ""
     session_id: str = ""            # optional, used only for output filename
+    use_multi_agent_writer: bool = False
+    allow_fallback_pdf: bool = False
+
+
+ALLOWED_PAPER_TEMPLATES = {"ieee"}
+
+
+def _normalize_paper_template(value: Any) -> str:
+    normalized = str(value or "ieee").strip().lower()
+    if normalized not in ALLOWED_PAPER_TEMPLATES:
+        allowed = ", ".join(sorted(ALLOWED_PAPER_TEMPLATES))
+        raise HTTPException(status_code=400, detail=f"Unsupported template. Allowed values: {allowed}.")
+    return normalized
+
+
+def _sanitize_context_summary(text: str) -> str:
+    cleaned = str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not cleaned:
+        return ""
+
+    lowered = cleaned.lower()
+    cut_markers = ["repository context summary", "##analysis", "analysis stats", "structure preview"]
+    cut_points = [idx for idx in (lowered.find(marker) for marker in cut_markers) if idx != -1]
+    if cut_points:
+        cleaned = cleaned[: min(cut_points)].strip()
+
+    cleaned = re.sub(r"^\s*abstract\s*[—:\-]\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned[:1200].strip()
 
 
 class SectionRefineRequest(BaseModel):
@@ -371,13 +411,17 @@ async def write_report(req: WriteRequest):
             detail="Session has no completed research result. Run research first."
         )
 
+    template = _normalize_paper_template(req.template)
+
     try:
         write_result = await writing_service.write(
             research_result=result_data,
             session_id=req.session_id,
             compile_pdf=req.compile_pdf,
-            template=req.template,
+            template=template,
             author=req.author,
+            use_multi_agent_writer=req.use_multi_agent_writer,
+            allow_fallback_pdf=req.allow_fallback_pdf,
         )
         return {
             "status": "success",
@@ -412,14 +456,17 @@ async def write_partial_report(req: PartialWriteRequest):
         "citations": req.citations,
         "report":   "",
     }
+    template = _normalize_paper_template(req.template)
 
     try:
         write_result = await writing_service.write(
             research_result=research_result,
             session_id=f"{sid}_partial",
             compile_pdf=req.compile_pdf,
-            template=req.template,
+            template=template,
             author=req.author,
+            use_multi_agent_writer=req.use_multi_agent_writer,
+            allow_fallback_pdf=req.allow_fallback_pdf,
         )
         partial_sid = f"{sid}_partial"
         return {
@@ -455,6 +502,8 @@ async def write_raw_report(request: ResearchRequest):
             research_result=result,
             session_id=session_id,
             compile_pdf=True,
+            use_multi_agent_writer=False,
+            allow_fallback_pdf=False,
         )
         return {
             "status": "success",
@@ -492,9 +541,10 @@ async def section_refine(req: SectionRefineRequest):
     }
     target = word_targets.get(req.section_key, "400–700")
 
+    context_summary = _sanitize_context_summary(req.context_summary)
     context_block = (
-        f"\nPaper context/abstract:\n{req.context_summary}\n"
-        if req.context_summary.strip() else ""
+        f"\nPaper context/abstract:\n{context_summary}\n"
+        if context_summary else ""
     )
 
     prompt = (
@@ -533,43 +583,149 @@ class GithubAnalyzeRequest(BaseModel):
     github_token: Optional[str] = None   # optional PAT for higher rate limits
 
 
+class RepoAnalyzeRequest(BaseModel):
+    repo_url: Optional[str] = None
+    folder_path: Optional[str] = None
+    existing_title: Optional[str] = None
+    output_dir: str = "./outputs/GitHub"
+
+
+def _resolve_output_dir(raw_output_dir: str) -> Path:
+    path = Path(raw_output_dir).expanduser()
+    if not path.is_absolute():
+        path = (BASE_DIR / path).resolve()
+    return path
+
+
+def _sanitize_uploaded_relative_path(filename: str) -> Path:
+    normalized = (filename or "").replace("\\", "/")
+    parts = [part for part in normalized.split("/") if part and part not in {".", ".."}]
+    if not parts:
+        raise ValueError("Invalid upload filename")
+    return Path(*parts)
+
+
 @app.post("/api/github/analyze")
 async def github_analyze(req: GithubAnalyzeRequest):
     """
-    Scrape a public GitHub repository's concepts and synthesise with local LLM.
-    No git clone — uses GitHub REST API + raw content. Target: <60 s.
+    Analyze a public GitHub repository via the repo_analyzer pipeline.
     """
-    import asyncio as _asyncio
     try:
-        from multi_agent.agents.github_agent import GithubAgent, GithubAgentConfig
-        cfg = GithubAgentConfig(
-            repo_url=req.repo_url,
-            existing_title=req.existing_title,
-            output_dir=req.output_dir,
-            ollama_base_url="http://localhost:11434",
-            ollama_model="gpt-oss:20b",
-            github_token=req.github_token,
+        result = await asyncio.to_thread(
+            analyze_github_repository,
+            req.repo_url.strip(),
+            _resolve_output_dir(req.output_dir),
+            req.existing_title,
         )
-        agent = GithubAgent(config=cfg)
-        try:
-            response = await _asyncio.wait_for(agent.run(), timeout=200.0)
-        except _asyncio.TimeoutError:
-            raise HTTPException(
-                status_code=504,
-                detail="GitHub analysis timed out (200 s). The LLM may be busy — please try again.",
-            )
-        if response.success:
-            return {
-                "status": "success",
-                "data": response.data,
-                "elapsed_seconds": response.execution_time,
-            }
-        raise HTTPException(status_code=500, detail=response.error or "Analysis failed")
+        return {"status": "success", "data": result}
+    except RepoAnalysisError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except HTTPException:
         raise
     except Exception as exc:
         logger.error("GitHub analyze error: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/repo/analyze")
+async def repo_analyze(req: RepoAnalyzeRequest):
+    """
+    Analyze either a GitHub repository URL or a local folder path,
+    returning structure + summary + generated title.
+    """
+    if not (req.repo_url or req.folder_path):
+        raise HTTPException(status_code=400, detail="Provide either repo_url or folder_path")
+
+    try:
+        output_dir = _resolve_output_dir(req.output_dir)
+        if req.repo_url:
+            result = await asyncio.to_thread(
+                analyze_github_repository,
+                req.repo_url.strip(),
+                output_dir,
+                req.existing_title,
+            )
+        else:
+            result = await asyncio.to_thread(
+                analyze_local_repository,
+                (req.folder_path or "").strip(),
+                output_dir,
+                req.existing_title,
+            )
+
+        return {"status": "success", "data": result}
+    except RepoAnalysisError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Repository analyze error: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/repo/analyze-folder")
+async def repo_analyze_folder_upload(
+    files: List[UploadFile] = File(...),
+    existing_title: str = Form(""),
+    output_dir: str = Form("./outputs/GitHub"),
+):
+    """
+    Analyze a browser-selected folder (uploaded as many files), without zip.
+    """
+    if not files:
+        raise HTTPException(status_code=400, detail="No files were uploaded")
+    if len(files) > 5000:
+        raise HTTPException(status_code=400, detail="Too many files uploaded (max 5000)")
+
+    temp_root = Path(tempfile.mkdtemp(prefix="repo_upload_"))
+    written_paths: List[Path] = []
+
+    try:
+        for idx, upload in enumerate(files):
+            raw_name = upload.filename or f"file_{idx}"
+            try:
+                relative_path = _sanitize_uploaded_relative_path(raw_name)
+            except ValueError:
+                continue
+
+            target_path = temp_root / relative_path
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+
+            content = await upload.read()
+            target_path.write_bytes(content)
+            written_paths.append(relative_path)
+            await upload.close()
+
+        if not written_paths:
+            raise HTTPException(status_code=400, detail="Uploaded files were invalid or empty")
+
+        all_nested = all(len(p.parts) > 1 for p in written_paths)
+        top_levels = {p.parts[0] for p in written_paths if len(p.parts) > 1}
+
+        repo_root = temp_root
+        if all_nested and len(top_levels) == 1:
+            candidate = temp_root / next(iter(top_levels))
+            if candidate.exists() and candidate.is_dir():
+                repo_root = candidate
+
+        result = await asyncio.to_thread(
+            analyze_repo_path,
+            repo_root,
+            _resolve_output_dir(output_dir),
+            existing_title.strip() or None,
+            "uploaded_folder",
+            "browser_folder_upload",
+        )
+        return {"status": "success", "data": result}
+    except RepoAnalysisError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Folder upload analyze error: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        shutil.rmtree(temp_root, ignore_errors=True)
 
 
 @app.get("/api/github/analyze/{job_id}")
@@ -624,7 +780,7 @@ async def websocket_research(websocket: WebSocket):
     """
     WebSocket endpoint for real-time research with progress updates.
     
-    Client sends: {"query": "...", "citation_style": "APA"}
+    Client sends: {"query": "...", "citation_style": "IEEE"}
     Server sends progress updates and final result.
     """
     await websocket.accept()
@@ -643,7 +799,7 @@ async def websocket_research(websocket: WebSocket):
             
             if action == "research":
                 query = request.get("query", "")
-                citation_style = request.get("citation_style", "APA")
+                citation_style = request.get("citation_style", "IEEE")
                 
                 if not query:
                     await websocket.send_json({
@@ -746,13 +902,25 @@ Rules: Only answer from report context. Use citations. Be concise. Markdown form
                     "status": "started",
                     "message": "Generating LaTeX document…"
                 })
+
+                try:
+                    template = _normalize_paper_template(request.get("template", "ieee"))
+                except HTTPException as exc:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": exc.detail,
+                    })
+                    continue
+
                 try:
                     write_result = await writing_service.write(
                         research_result=result_data,
                         session_id=session_id,
                         compile_pdf=request.get("compile_pdf", True),
-                        template=request.get("template", "ieee"),
-                        author=request.get("author", "Yukti Research AI"),
+                        template=template,
+                        author=request.get("author", ""),
+                        use_multi_agent_writer=request.get("use_multi_agent_writer", False),
+                        allow_fallback_pdf=request.get("allow_fallback_pdf", False),
                     )
                     await websocket.send_json({
                         "type": "write_result",
@@ -786,8 +954,13 @@ Rules: Only answer from report context. Use citations. Be concise. Markdown form
     
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected: {session_id}")
+    except RuntimeError as e:
+        logger.info(f"WebSocket closed before completion ({session_id}): {e}")
     except Exception as e:
-        logger.error(f"WebSocket error: {e}")
+        if "WebSocket is not connected" in str(e):
+            logger.info(f"WebSocket connection already closed: {session_id}")
+        else:
+            logger.error(f"WebSocket error: {e}")
     finally:
         active_connections.pop(session_id, None)
 

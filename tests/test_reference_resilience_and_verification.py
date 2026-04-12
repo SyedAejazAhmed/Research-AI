@@ -60,6 +60,39 @@ def test_generate_references_handles_primary_discovery_exception(monkeypatch, tm
     assert "Harvard" in result["style_name"]
 
 
+def test_generate_references_filters_non_paper_candidates(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(refmod, "REFERENCE_MEMORY_PATH", tmp_path / "reference_memory.json")
+    monkeypatch.setattr(
+        refmod,
+        "_search_ddg",
+        lambda query, limit: [
+            {"title": "Comprehensive Editorial Commentary on Trends", "url": "https://ieeexplore.ieee.org/editorial", "snippet": "News update"},
+            {"title": "Robust Medical AI with Language Models", "url": "https://doi.org/10.1000/sample.doi", "snippet": "IEEE Access 2024"},
+        ],
+    )
+    monkeypatch.setattr(refmod, "_search_crossref_query", lambda query, limit: [])
+    monkeypatch.setattr(
+        refmod,
+        "_enrich_semantic_scholar",
+        lambda title: {
+            "title": title,
+            "authors": ["Jane Doe"] if "robust" in title.lower() else [],
+            "year": "2024" if "robust" in title.lower() else "",
+            "source": "IEEE Access" if "robust" in title.lower() else "",
+            "doi": "10.1000/sample.doi" if "robust" in title.lower() else "",
+            "abstract": "",
+            "url": "https://doi.org/10.1000/sample.doi" if "robust" in title.lower() else "https://ieeexplore.ieee.org/editorial",
+        },
+    )
+    monkeypatch.setattr(refmod, "_enrich_crossref", lambda title: None)
+
+    result = refmod.generate_references("medical llm diagnosis", limit=5, style="IEEE")
+
+    assert result["count"] == 1
+    assert result["papers"][0]["title"] == "Robust Medical AI with Language Models"
+    assert result["dedup_stats"]["filtered_non_academic"] >= 1
+
+
 def test_verification_agent_saves_source_and_verification_logs(tmp_path: Path) -> None:
     agent = VerificationAgent(output_dir=str(tmp_path))
 

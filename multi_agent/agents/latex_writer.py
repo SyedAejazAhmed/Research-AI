@@ -54,12 +54,15 @@ class LaTeXDocument:
     title: str
     author: str
     abstract: str = ""
+    keywords: List[str] = None
     sections: List[LaTeXSection] = None
     bibliography: List[str] = None
     preamble: str = ""
     document_class: str = "article"
     
     def __post_init__(self):
+        if self.keywords is None:
+            self.keywords = []
         if self.sections is None:
             self.sections = []
         if self.bibliography is None:
@@ -221,6 +224,7 @@ class LaTeXWriterAgent(BaseAgent):
         author: str,
         content: str = "",
         abstract: str = "",
+        keywords: List[str] = None,
         document_class: str = "article",
         sections: List[LaTeXSection] = None,
     ) -> LaTeXDocument:
@@ -242,6 +246,7 @@ class LaTeXWriterAgent(BaseAgent):
             title=title,
             author=author,
             abstract=abstract,
+            keywords=keywords or [],
             document_class=document_class,
             sections=sections or [],
         )
@@ -411,6 +416,8 @@ class LaTeXWriterAgent(BaseAgent):
         """Assemble a complete LaTeX document."""
         if self._is_ieee_document_class(doc.document_class):
             return self._assemble_ieee_document(doc)
+        if self._is_springer_document_class(doc.document_class):
+            return self._assemble_springer_document(doc)
 
         latex = f"\\documentclass[12pt,a4paper]{{{doc.document_class}}}\n\n"
 
@@ -421,6 +428,7 @@ class LaTeXWriterAgent(BaseAgent):
 \\usepackage{amsmath,amssymb}
 \\usepackage{graphicx}
 \\usepackage{hyperref}
+\\usepackage{xurl}
 \\usepackage{natbib}
 \\usepackage{geometry}
 \\geometry{margin=1in}
@@ -462,6 +470,28 @@ class LaTeXWriterAgent(BaseAgent):
         normalized = (document_class or "").strip().lower()
         return normalized in {"ieee", "ieeetran", "ieee-tran", "ieee_tran"}
 
+    @staticmethod
+    def _is_springer_document_class(document_class: str) -> bool:
+        """Return True when the requested template is a Springer LNCS variant."""
+        normalized = (document_class or "").strip().lower()
+        return normalized in {"springer", "llncs", "lncs", "springer-llncs", "springer_llncs"}
+
+    @staticmethod
+    def _escape_inline_text(text: str) -> str:
+        safe = str(text or "")
+        for src, dst in [
+            ("&", r"\&"),
+            ("%", r"\%"),
+            ("#", r"\#"),
+            ("_", r"\_"),
+        ]:
+            safe = safe.replace(src, dst)
+        return safe
+
+    @staticmethod
+    def _is_references_section(section: LaTeXSection) -> bool:
+        return (str(getattr(section, "title", "")).strip().lower() in {"references", "reference", "bibliography"})
+
     def _assemble_ieee_document(self, doc: LaTeXDocument) -> str:
         """Assemble a document using IEEEtran conference format."""
         latex = """\\documentclass[conference]{IEEEtran}
@@ -478,6 +508,7 @@ class LaTeXWriterAgent(BaseAgent):
 \\usepackage{xcolor}
 \\usepackage{hyperref}
 \\usepackage{url}
+\\usepackage{xurl}
 
 """
 
@@ -492,16 +523,67 @@ class LaTeXWriterAgent(BaseAgent):
         if doc.abstract:
             latex += f"\\begin{{abstract}}\n{doc.abstract}\n\\end{{abstract}}\n\n"
 
-        latex += "\\begin{IEEEkeywords}\n"
-        latex += "Artificial Intelligence, Academic Writing, IEEE Format\n"
-        latex += "\\end{IEEEkeywords}\n\n"
+        keyword_terms = [str(k).strip() for k in (doc.keywords or []) if str(k).strip()]
+        if keyword_terms:
+            safe_terms = [self._escape_inline_text(term) for term in keyword_terms[:3]]
+            latex += "\\noindent\\textbf{Keywords:} " + ", ".join(safe_terms) + "\n\n"
 
         for section in doc.sections:
+            if doc.bibliography and self._is_references_section(section):
+                continue
             latex += section.to_latex()
             latex += "\n"
 
         if doc.bibliography:
             latex += "\\bibliographystyle{IEEEtran}\n"
+            latex += "\\bibliography{references}\n\n"
+
+        latex += "\\end{document}\n"
+        return latex
+
+    def _assemble_springer_document(self, doc: LaTeXDocument) -> str:
+        """Assemble a document using Springer LNCS style."""
+        latex = """\\documentclass[runningheads]{llncs}
+
+% Springer packages
+\\usepackage[T1]{fontenc}
+\\usepackage{graphicx}
+\\usepackage{amsmath,amssymb}
+\\usepackage{hyperref}
+\\usepackage{xurl}
+
+"""
+
+        if doc.preamble:
+            latex += f"% Custom preamble\n{doc.preamble}\n\n"
+
+        latex += f"\\title{{{doc.title}}}\n"
+        latex += f"\\author{{{doc.author}}}\n"
+        latex += "\\institute{ }\n\n"
+        latex += "\\begin{document}\n\n"
+        latex += "\\maketitle\n\n"
+
+        keyword_terms = [str(k).strip() for k in (doc.keywords or []) if str(k).strip()]
+        safe_keywords = ", ".join(self._escape_inline_text(term) for term in keyword_terms[:3])
+
+        if doc.abstract:
+            latex += f"\\begin{{abstract}}\n{doc.abstract}\n"
+            if safe_keywords:
+                latex += f"\\keywords{{{safe_keywords}}}\n"
+            latex += "\\end{abstract}\n\n"
+        elif safe_keywords:
+            latex += "\\begin{abstract}\n"
+            latex += f"\\keywords{{{safe_keywords}}}\n"
+            latex += "\\end{abstract}\n\n"
+
+        for section in doc.sections:
+            if doc.bibliography and self._is_references_section(section):
+                continue
+            latex += section.to_latex()
+            latex += "\n"
+
+        if doc.bibliography:
+            latex += "\\bibliographystyle{splncs04}\n"
             latex += "\\bibliography{references}\n\n"
 
         latex += "\\end{document}\n"

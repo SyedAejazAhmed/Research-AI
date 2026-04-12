@@ -15,6 +15,11 @@ logger = logging.getLogger(__name__)
 class FileFilter:
     """Applies inclusion/exclusion rules to select meaningful repository files."""
 
+    # Optimistic budget: keep highest-signal files when repositories are large.
+    # Complexity: scan is O(n), ranking is O(r log r), memory is O(r), where
+    # n = total files visited and r = relevant files before capping.
+    MAX_SELECTED_FILES: int = 1_500
+
     EXCLUDED_DIRS: FrozenSet[str] = frozenset({
         ".git", "node_modules", "venv", ".venv", "env", ".env",
         "__pycache__", "build", "dist", ".tox",
@@ -64,7 +69,7 @@ class FileFilter:
         ".woff", ".woff2", ".ttf", ".eot",
         ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
         ".db", ".sqlite", ".sqlite3",
-        ".lock",
+        ".lock", ".pth", ".pt", ".ckpt", ".onnx", ".h5", ".hdf5", ".bin",
     })
 
     MAX_FILE_SIZE_BYTES: int = 1_048_576  # 1 MB
@@ -74,6 +79,18 @@ class FileFilter:
         "Cargo.toml", "go.mod", "Gemfile", "Pipfile",
         "docker-compose.yml", "docker-compose.yaml",
         "Dockerfile", "Makefile",
+    })
+
+    HIGH_SIGNAL_EXTENSIONS: FrozenSet[str] = frozenset({
+        ".py", ".ipynb", ".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs",
+        ".go", ".java", ".c", ".cpp", ".h", ".hpp", ".cs", ".rs", ".rb",
+        ".php", ".swift", ".kt", ".kts", ".sql", ".sh", ".bash", ".ps1",
+    })
+
+    MEDIUM_SIGNAL_EXTENSIONS: FrozenSet[str] = frozenset({
+        ".md", ".rst", ".txt", ".json", ".yaml", ".yml", ".toml", ".cfg",
+        ".ini", ".xml", ".proto", ".tf", ".hcl", ".html", ".css", ".scss",
+        ".less",
     })
 
     def __init__(self) -> None:
@@ -105,6 +122,36 @@ class FileFilter:
         if name_lower.endswith(".min.js") or name_lower.endswith(".min.css"):
             return True
         return False
+
+    def _optimistic_priority(self, relative_path: Path) -> int:
+        """Score files by expected signal for repository reasoning."""
+        score = 0
+        name = relative_path.name
+        name_lower = name.lower()
+        suffix = relative_path.suffix.lower()
+
+        if name in self.CRITICAL_FILENAMES:
+            score += 140
+        if name in self.INCLUDED_FILENAMES:
+            score += 80
+        if name_lower.startswith("readme"):
+            score += 60
+
+        if suffix in self.HIGH_SIGNAL_EXTENSIONS:
+            score += 55
+        elif suffix in self.MEDIUM_SIGNAL_EXTENSIONS:
+            score += 30
+        else:
+            score += 8
+
+        if any(part.lower() in {"src", "app", "core", "server", "backend", "frontend"} for part in relative_path.parts):
+            score += 18
+        if any(part.lower() in {"tests", "test"} for part in relative_path.parts):
+            score += 10
+
+        depth = len(relative_path.parts)
+        score += max(0, 18 - min(depth, 18))
+        return score
 
     @staticmethod
     def file_size(file_path: Path) -> int:
@@ -173,4 +220,21 @@ class FileFilter:
             "File filter result — included: %d, skipped: %d, oversized: %d",
             len(relevant), skipped, oversized,
         )
+
+        if len(relevant) > self.MAX_SELECTED_FILES:
+            relevant.sort(
+                key=lambda p: (
+                    -self._optimistic_priority(p.relative_to(repo_path)),
+                    self.file_size(p),
+                    p.relative_to(repo_path).as_posix(),
+                )
+            )
+            dropped = len(relevant) - self.MAX_SELECTED_FILES
+            relevant = relevant[: self.MAX_SELECTED_FILES]
+            logger.info(
+                "Optimistic cap applied — retained %d files, dropped %d lower-priority files.",
+                len(relevant),
+                dropped,
+            )
+
         return relevant

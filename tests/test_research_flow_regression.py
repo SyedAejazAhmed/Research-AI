@@ -12,7 +12,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.agents.planner import PlannerAgent
-from app.agents.synthesizer import SynthesizerAgent
+from app.agents.synthesizer import SynthesizerAgent, SECTION_WORD_BOUNDS
 
 
 def test_planner_default_sections_abstract_first_order() -> None:
@@ -124,3 +124,69 @@ def test_enforce_word_target_expands_short_abstract() -> None:
 
     wc = len(result.split())
     assert 150 <= wc <= 250
+
+
+def test_synthesizer_normalize_ieee_text_removes_markdown_links() -> None:
+    raw = "Prior work reports strong gains [Example Study](https://example.org/study) and reproducibility."
+    cleaned = SynthesizerAgent._normalize_ieee_text(raw)
+
+    assert "[Example Study](https://example.org/study)" not in cleaned
+    assert "Example Study" in cleaned
+    assert "https://example.org/study" not in cleaned
+
+
+def test_synthesizer_normalize_ieee_text_preserves_line_structure() -> None:
+    raw = (
+        "Physics-Based Restoration Techniques\n"
+        "These methods leverage attenuation models.\n\n"
+        "Domain Adaptation\n"
+        "Feature alignment improves transfer."
+    )
+    cleaned = SynthesizerAgent._normalize_ieee_text(raw)
+
+    assert "\n\n" in cleaned
+    assert "Physics-Based Restoration Techniques\nThese methods" in cleaned
+
+
+def test_synthesizer_finalize_section_text_handles_truncated_tail() -> None:
+    raw = "First sentence is complete. Second sentence is complete. Third sentence is cut"
+    cleaned = SynthesizerAgent._finalize_section_text(raw)
+
+    assert cleaned.endswith(".")
+    assert "Third sentence is cut" not in cleaned
+
+
+class _AlwaysShortLLM:
+    is_available = True
+
+    async def generate(self, prompt: str, max_tokens: int = 600, temperature: float = 0.2) -> str:
+        return " ".join(["evidence"] * 40)
+
+
+def test_synthesizer_enforces_strict_word_bounds_when_llm_undergenerates() -> None:
+    synthesizer = SynthesizerAgent(llm_client=_AlwaysShortLLM())
+
+    aggregated_data = {
+        "plan": {
+            "title": "Underwater Image Enhancement for Maritime Security",
+            "keywords": ["underwater", "enhancement", "maritime"],
+        },
+        "all_content": [],
+        "sections_context": [],
+        "citations_text": "## References\n\n[1] Example citation.",
+        "total_sources": 5,
+        "academic_sources": 5,
+    }
+
+    result = asyncio.run(synthesizer.synthesize(aggregated_data))
+
+    abstract_wc = len(result["abstract"].split())
+    assert 150 <= abstract_wc <= 250
+
+    for section in result["sections"]:
+        key = section.get("key")
+        if key not in SECTION_WORD_BOUNDS:
+            continue
+        min_w, max_w = SECTION_WORD_BOUNDS[key]
+        wc = len((section.get("content") or "").split())
+        assert min_w <= wc <= max_w

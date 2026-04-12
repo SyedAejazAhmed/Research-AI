@@ -196,7 +196,7 @@ export default function SectionChat({
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-4 text-gray-500">
         <div className="w-14 h-14 rounded-2xl bg-gray-800 flex items-center justify-center">
-          <Loader2 size={28} className="animate-spin text-violet-400" />
+          <Loader2 size={28} className="animate-spin text-emerald-400" />
         </div>
         <div className="text-sm font-medium">Generating {meta.label}…</div>
         <div className="text-xs text-gray-600">{meta.ieee}</div>
@@ -210,7 +210,7 @@ export default function SectionChat({
       {/* ── Section header ────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-gray-800 shrink-0">
         <div className="flex items-center gap-3">
-          <FileText size={16} className="text-violet-400 shrink-0" />
+          <FileText size={16} className="text-emerald-400 shrink-0" />
           <div>
             <h2 className="text-sm font-bold text-white">{meta.label}</h2>
             <div className="text-[9px] text-gray-500 uppercase tracking-widest">
@@ -225,7 +225,7 @@ export default function SectionChat({
                 value={referenceStyle}
                 onChange={(e) => onReferenceStyleChange?.(e.target.value)}
                 disabled={referencesLoading || isApproved}
-                className="px-2 py-1 rounded-lg text-xs bg-gray-900 border border-gray-700 text-gray-200 focus:outline-none focus:border-violet-500/50 disabled:opacity-50"
+                className="px-2 py-1 rounded-lg text-xs bg-gray-900 border border-gray-700 text-gray-200 focus:outline-none focus:border-emerald-500/50 disabled:opacity-50"
               >
                 <option value="IEEE">IEEE</option>
                 <option value="HARVARD">Harvard</option>
@@ -286,9 +286,11 @@ export default function SectionChat({
             disabled={isApproved}
             rows={10}
             className={`w-full bg-transparent px-4 py-3 text-sm text-gray-200 font-mono resize-y leading-relaxed
+              break-words
               focus:outline-none transition-colors
               ${isApproved ? 'opacity-60 cursor-default' : ''}
             `}
+            style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}
           />
         </div>
 
@@ -307,11 +309,11 @@ export default function SectionChat({
             animate={{ opacity: 1, y: 0 }}
             className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
-            <div className={`max-w-[85%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
+            <div className={`max-w-[85%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words ${
               msg.role === 'user'
-                ? 'bg-violet-600 text-white rounded-br-sm'
+                ? 'bg-emerald-600 text-white rounded-br-sm'
                 : 'bg-gray-800 text-gray-200 rounded-bl-sm border border-gray-700'
-            }`}>
+            }`} style={{ overflowWrap: 'anywhere' }}>
               {msg.content}
             </div>
           </motion.div>
@@ -327,7 +329,7 @@ export default function SectionChat({
               className="flex justify-start"
             >
               <div className="bg-gray-800 border border-gray-700 rounded-2xl rounded-bl-sm px-4 py-2.5 flex items-center gap-2 text-sm text-gray-400">
-                <Loader2 size={14} className="animate-spin text-violet-400" />
+                <Loader2 size={14} className="animate-spin text-emerald-400" />
                 <span>Refining section…</span>
               </div>
             </motion.div>
@@ -352,13 +354,14 @@ export default function SectionChat({
             disabled={!section || isApproved || refining}
             rows={2}
             className="flex-1 bg-gray-900 border border-gray-700 rounded-xl px-3 py-2 text-sm text-gray-200
-              placeholder:text-gray-600 resize-none focus:outline-none focus:border-violet-500/50
+              placeholder:text-gray-600 resize-none focus:outline-none focus:border-emerald-500/50 break-words
               transition-colors disabled:opacity-40"
+            style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}
           />
           <button
             onClick={handleSend}
             disabled={!userInput.trim() || !section || isApproved || refining}
-            className="p-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white transition-colors disabled:opacity-30 shrink-0"
+            className="p-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-30 shrink-0"
           >
             {refining ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
           </button>

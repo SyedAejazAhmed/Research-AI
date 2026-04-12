@@ -15,6 +15,8 @@ export default function IEEEPreview({
   editValues,     // {[key]: string}
   plan,           // {title, query, keywords}
   sessionId,
+  paperTemplate = 'ieee',
+  onPaperTemplateChange,
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [compiling, setCompiling] = useState(false);
@@ -22,6 +24,14 @@ export default function IEEEPreview({
   const [pdfVersion, setPdfVersion] = useState(0);
   const debounceRef = useRef(null);
   const lastCompiledSignatureRef = useRef('');
+  const normalizedTemplate = 'ieee';
+  const templateLabel = 'IEEE';
+
+  useEffect(() => {
+    if ((paperTemplate || 'ieee').toLowerCase() !== 'ieee') {
+      onPaperTemplateChange?.('ieee');
+    }
+  }, [paperTemplate, onPaperTemplateChange]);
 
   const paperTitle  = plan?.title || plan?.query || 'Research Paper';
   const previewPdfUrl = compileResult?.preview_pdf || compileResult?.download_pdf || null;
@@ -52,7 +62,8 @@ export default function IEEEPreview({
     t: paperTitle,
     a: abstractText,
     b: bodySections,
-  }), [paperTitle, abstractText, bodySections]);
+    p: normalizedTemplate,
+  }), [paperTitle, abstractText, bodySections, normalizedTemplate]);
 
   async function compileCurrentContent() {
     if (!hasRenderableContent) return;
@@ -67,12 +78,24 @@ export default function IEEEPreview({
           sections: bodySections,
           citations: {},
           compile_pdf: true,
-          template: 'ieee',
-          author: 'Yukti Research AI',
+          template: normalizedTemplate,
+          author: '',
           session_id: sessionId || '',
+          allow_fallback_pdf: false,
         }),
       });
-      const data = await res.json();
+      let data = null;
+      try {
+        data = await res.json();
+      } catch (_err) {
+        data = null;
+      }
+
+      if (!res.ok || data?.status !== 'success') {
+        const detail = data?.detail || data?.error || `Preview compile failed (${res.status})`;
+        throw new Error(detail);
+      }
+
       setCompileResult(data);
       if (data?.status === 'success' && data?.download_pdf) {
         setPdfVersion(v => v + 1);
@@ -111,7 +134,7 @@ export default function IEEEPreview({
           <Eye size={16} />
         </button>
         <div style={{ writingMode: 'vertical-rl' }} className="text-[9px] uppercase tracking-widest text-gray-600 rotate-180 mt-2">
-          IEEE Preview
+          Paper Preview
         </div>
       </div>
     );
@@ -124,7 +147,18 @@ export default function IEEEPreview({
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-800 shrink-0">
         <div className="flex items-center gap-2">
           <span className="text-[9px] font-black uppercase tracking-widest text-gray-500">PDF Preview</span>
-          <span className="text-[8px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-bold">EXACT</span>
+          <span className="text-[8px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-bold">{templateLabel}</span>
+          <span className="text-[8px] bg-gray-800 text-gray-300 border border-gray-700 px-1.5 py-0.5 rounded font-bold">EXACT</span>
+          {typeof onPaperTemplateChange === 'function' && (
+            <select
+              value="ieee"
+              onChange={(e) => onPaperTemplateChange(e.target.value)}
+              className="ml-1 bg-gray-900 border border-gray-700 text-gray-200 text-[10px] px-1.5 py-0.5 rounded outline-none"
+              aria-label="Select paper template"
+            >
+              <option value="ieee">IEEE</option>
+            </select>
+          )}
         </div>
         <button onClick={() => setCollapsed(true)} className="p-1 hover:bg-gray-800 rounded transition-colors text-gray-600 hover:text-gray-300">
           <EyeOff size={13} />
@@ -156,15 +190,25 @@ export default function IEEEPreview({
         <button
           onClick={handleGeneratePDF}
           disabled={compiling || sections.length === 0}
-          className="w-full py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+          className="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
         >
           {compiling
             ? <><Loader2 size={13} className="animate-spin" /> Compiling...</>
-            : <><Download size={13} /> Generate IEEE PDF</>}
+            : <><Download size={13} /> Generate {templateLabel} PDF</>}
         </button>
 
         {compileResult?.error && (
           <p className="text-xs text-red-400">{compileResult.error}</p>
+        )}
+        {!compileResult?.error && compileResult?.status === 'success' && compileResult?.pdf_success === false && (
+          <div className="text-[10px] text-amber-400 leading-relaxed">
+            {(compileResult.compile_errors || []).slice(0, 3).map((err, idx) => (
+              <p key={`compile-err-${idx}`}>{err}</p>
+            ))}
+            {(compileResult.compile_errors || []).length === 0 && (
+              <p>PDF was not generated. Check LaTeX/compiler dependencies and try again.</p>
+            )}
+          </div>
         )}
         {!compileResult?.error && compileResult?.status === 'success' && (
           <div className="flex gap-2 flex-wrap">
@@ -176,13 +220,13 @@ export default function IEEEPreview({
             )}
             {previewPdfUrl && (
               <a href={previewPdfUrl} target="_blank" rel="noreferrer"
-                className="flex-1 py-1.5 rounded-lg bg-indigo-700 hover:bg-indigo-600 text-white text-[10px] text-center font-bold transition-colors">
+                className="flex-1 py-1.5 rounded-lg bg-teal-700 hover:bg-teal-600 text-white text-[10px] text-center font-bold transition-colors">
                 Open PDF
               </a>
             )}
             {downloadPdfUrl && (
               <a href={downloadPdfUrl} download
-                className="flex-1 py-1.5 rounded-lg bg-violet-700 hover:bg-violet-600 text-white text-[10px] text-center font-bold transition-colors">
+                className="flex-1 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white text-[10px] text-center font-bold transition-colors">
                 Download PDF
               </a>
             )}

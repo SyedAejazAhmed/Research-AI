@@ -14,6 +14,7 @@ import re
 from typing import Dict, Any, Optional, Callable
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 from app.agents.planner import PlannerAgent
 from app.agents.researchers import (
@@ -113,7 +114,7 @@ class ResearchOrchestrator:
         query: str,
         session_id: str = None,
         callback: Optional[Callable] = None,
-        citation_style: str = "APA"
+        citation_style: str = "IEEE"
     ) -> Dict[str, Any]:
         """
         Run the complete research pipeline.
@@ -145,7 +146,11 @@ class ResearchOrchestrator:
             # Step 1: Planning
             # ========================================
             if callback:
-                await callback("orchestrator", "step", "Step 1/5: Planning research...")
+                await callback(
+                    "orchestrator",
+                    "step",
+                    "Step 1/5: Planning research scope from repository analysis context...",
+                )
             
             plan = await self.planner.create_plan(query, callback)
             self._update_session(session_id, "planning_complete", plan)
@@ -154,7 +159,7 @@ class ResearchOrchestrator:
             # Step 2: Parallel Research
             # ========================================
             if callback:
-                await callback("orchestrator", "step", "Step 2/5: Researching in parallel...")
+                await callback("orchestrator", "step", "Step 2/5: Collecting evidence in parallel...")
             
             # Run all research agents in parallel
             web_task = self.web_agent.research(query, plan.get("keywords", []), callback)
@@ -181,7 +186,11 @@ class ResearchOrchestrator:
             # Step 3: Process & Aggregate
             # ========================================
             if callback:
-                await callback("orchestrator", "step", "Step 3/5: Curating 30 references and aggregating evidence...")
+                await callback(
+                    "orchestrator",
+                    "step",
+                    "Step 3/5: Curating references first (target 30) and aggregating evidence...",
+                )
             
             # Process documents
             all_research = academic_results.get("results", []) + web_results.get("results", [])
@@ -209,7 +218,11 @@ class ResearchOrchestrator:
             # Step 4: LLM Synthesis
             # ========================================
             if callback:
-                await callback("orchestrator", "step", "Step 4/5: Synthesizing report with AI...")
+                await callback(
+                    "orchestrator",
+                    "step",
+                    "Step 4/5: Drafting report sections from curated references...",
+                )
             
             synthesis = await self.synthesizer.synthesize(aggregated, callback)
             
@@ -221,7 +234,11 @@ class ResearchOrchestrator:
             # Step 5: Publishing
             # ========================================
             if callback:
-                await callback("orchestrator", "step", "Step 5/5: Verifying sources and publishing report...")
+                await callback(
+                    "orchestrator",
+                    "step",
+                    "Step 5/5: Writing, verifying sources, and publishing report...",
+                )
 
             verification = {
                 "summary": {
@@ -382,7 +399,14 @@ class ResearchOrchestrator:
         for idx, block in enumerate(blocks, start=1):
             paper = papers[idx - 1] if idx - 1 < len(papers) else {}
             doi = str(paper.get("DOI", "")).strip()
-            if doi:
+            item_type = str(paper.get("itemType", "")).strip()
+            is_academic_paper = bool(paper.get("isAcademicPaper", False))
+            paper_url = str(paper.get("url", ""))
+            scholarly_url = ResearchOrchestrator._is_scholarly_url(paper_url)
+            is_verified = bool(is_academic_paper and (doi or scholarly_url))
+            if not is_academic_paper:
+                continue
+            if is_verified:
                 verified += 1
 
             creators = paper.get("creators", []) or []
@@ -403,19 +427,21 @@ class ResearchOrchestrator:
 
             citations.append(
                 {
-                    "number": idx,
-                    "formatted": block,
+                    "number": len(citations) + 1,
+                    "formatted": ResearchOrchestrator._renumber_reference_text(block, len(citations) + 1),
                     "doi": doi,
-                    "verified": bool(doi),
+                    "verified": is_verified,
                     "paper": {
                         "title": str(paper.get("title", "Untitled")),
                         "authors": authors,
                         "abstract": str(paper.get("abstractNote", "")),
                         "year": year,
-                        "url": str(paper.get("url", "")),
+                        "url": paper_url,
                         "doi": doi,
                         "source": str(paper.get("publicationTitle", "")),
                         "type": "academic_paper",
+                        "item_type": item_type,
+                        "verification_reason": str(paper.get("verificationReason", "")),
                     },
                 }
             )
@@ -431,18 +457,49 @@ class ResearchOrchestrator:
             "verified": verified,
             "style": citation_style,
             "formatted_text": formatted_text,
+            "pyzotero": reference_pack.get("pyzotero", {}),
             "timestamp": datetime.now().isoformat(),
         }
 
     @staticmethod
+    def _is_scholarly_url(url: str) -> bool:
+        host = urlparse(str(url or "")).netloc.lower()
+        scholarly_domains = [
+            "ieeexplore.ieee.org",
+            "scopus.com",
+            "link.springer.com",
+            "sciencedirect.com",
+            "nature.com",
+            "onlinelibrary.wiley.com",
+            "dl.acm.org",
+            "pubmed.ncbi.nlm.nih.gov",
+            "arxiv.org",
+            "mdpi.com",
+            "tandfonline.com",
+        ]
+        return any(domain in host for domain in scholarly_domains)
+
+    @staticmethod
     def _citation_identity(cite: Dict[str, Any]) -> str:
-        paper = cite.get("paper", {}) or {}
+        if not isinstance(cite, dict):
+            return ""
+
+        paper_raw = cite.get("paper", {})
+        paper = paper_raw if isinstance(paper_raw, dict) else {}
         doi = str(cite.get("doi") or paper.get("doi") or "").strip().lower()
         if doi:
             return f"doi:{doi}"
         title = str(paper.get("title", "")).strip().lower()
         normalized_title = re.sub(r"[^a-z0-9\s]", "", title)
-        return f"title:{normalized_title}"
+        if normalized_title:
+            return f"title:{normalized_title}"
+
+        formatted = str(cite.get("formatted", "")).strip().lower()
+        normalized_formatted = re.sub(r"[^a-z0-9\s]", "", formatted)
+        if normalized_formatted:
+            return f"formatted:{normalized_formatted}"
+
+        return ""
 
     @staticmethod
     def _renumber_reference_text(text: str, number: int) -> str:
@@ -460,12 +517,29 @@ class ResearchOrchestrator:
         merged = []
         seen = set()
 
-        for source in (primary.get("citations", []) or [], secondary.get("citations", []) or []):
-            identity = self._citation_identity(source)
-            if identity in seen:
+        citation_groups = (
+            primary.get("citations", []) or [],
+            secondary.get("citations", []) or [],
+        )
+
+        for group in citation_groups:
+            if not isinstance(group, list):
                 continue
-            seen.add(identity)
-            merged.append(dict(source))
+
+            for source in group:
+                if not isinstance(source, dict):
+                    continue
+
+                identity = self._citation_identity(source)
+                if not identity or identity in seen:
+                    continue
+
+                seen.add(identity)
+                merged.append(dict(source))
+
+                if len(merged) >= target:
+                    break
+
             if len(merged) >= target:
                 break
 

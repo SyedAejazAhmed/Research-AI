@@ -4,9 +4,9 @@ image_cataloger.py
 Catalog image artifacts in a repository and persist descriptive metadata.
 
 Goal:
-- Keep images for later paper drafting phases.
-- Store a practical description for each image (e.g., training curve,
-  confusion matrix, ROC curve) inferred from filename and nearby code hints.
+- Keep image assets for later paper drafting phases.
+- Extract notebook-referenced image paths and describe them using code/text
+  context only (no image processing, no VLM).
 """
 
 from __future__ import annotations
@@ -16,13 +16,13 @@ import logging
 import re
 import shutil
 from pathlib import Path
-from typing import Dict, List, Sequence
+from typing import Dict, List, Sequence, Set
 
 logger = logging.getLogger(__name__)
 
 
 class ImageCataloger:
-    """Discovers repository images and stores them with descriptions."""
+    """Discovers repository images and notebook image references."""
 
     IMAGE_EXTENSIONS = {
         ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".webp", ".tif", ".tiff"
@@ -60,34 +60,27 @@ class ImageCataloger:
         re.IGNORECASE,
     )
 
+    MARKDOWN_IMAGE_PATTERN = re.compile(
+        r"!\[(?P<alt>[^\]]*)\]\((?P<path>[^)]+)\)",
+        re.IGNORECASE,
+    )
+
     def catalog_images(
         self,
         repo_path: Path,
         source_files: Sequence[Path],
         output_images_dir: Path,
     ) -> List[Dict[str, object]]:
-        """Discover and copy image artifacts, then write metadata manifests.
-
-        Args:
-            repo_path: Root of the cloned repository.
-            source_files: Candidate text/code files used for hint extraction.
-            output_images_dir: Destination folder (typically ``.../images``).
-
-        Returns:
-            List of image metadata dictionaries.
-        """
+        """Discover and copy image artifacts, then write metadata manifests."""
         output_images_dir.mkdir(parents=True, exist_ok=True)
         image_files = self._discover_images(repo_path)
-
-        if not image_files:
-            self._write_manifest([], output_images_dir)
-            logger.info("Image catalog: no images found.")
-            return []
-
         source_hints = self._index_source_hints(source_files, repo_path)
-        assets_dir = output_images_dir / "assets"
+        notebook_refs = self._extract_notebook_image_references(source_files, repo_path)
 
+        assets_dir = output_images_dir / "assets"
         entries: List[Dict[str, object]] = []
+        seen: Set[str] = set()
+
         for image_path in image_files:
             relative = image_path.relative_to(repo_path)
             rel_key_name = relative.name.lower()
@@ -111,11 +104,53 @@ class ImageCataloger:
                     "description": description,
                     "likely_generated": likely_generated,
                     "evidence": hints[:3],
+                    "source": "repository_file",
                 }
             )
+            seen.add(relative.as_posix().lower())
+
+        for ref in notebook_refs:
+            rel_path = str(ref.get("relative_path", "")).strip()
+            if not rel_path:
+                continue
+
+            key = rel_path.lower()
+            if key in seen:
+                continue
+
+            description = str(ref.get("description", "")).strip()
+            evidence = list(ref.get("evidence", []))[:3]
+            likely_generated = bool(ref.get("likely_generated", False))
+            stored_relative = ""
+
+            notebook_ref_path = Path(rel_path)
+            candidate = (repo_path / notebook_ref_path).resolve()
+            if self._is_safe_repo_child(repo_path, candidate):
+                if candidate.exists() and candidate.is_file() and candidate.suffix.lower() in self.IMAGE_EXTENSIONS:
+                    dest = assets_dir / notebook_ref_path
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(candidate, dest)
+                    stored_relative = (Path("images") / "assets" / notebook_ref_path).as_posix()
+
+            entries.append(
+                {
+                    "relative_path": rel_path,
+                    "stored_path": stored_relative,
+                    "description": description,
+                    "likely_generated": likely_generated,
+                    "evidence": evidence,
+                    "source": "notebook_reference",
+                }
+            )
+            seen.add(key)
 
         self._write_manifest(entries, output_images_dir)
-        logger.info("Image catalog: %d image(s) indexed.", len(entries))
+        logger.info(
+            "Image catalog: %d total entries (%d file-backed, %d notebook references).",
+            len(entries),
+            sum(1 for e in entries if e.get("source") == "repository_file"),
+            sum(1 for e in entries if e.get("source") == "notebook_reference"),
+        )
         return entries
 
     def _discover_images(self, repo_path: Path) -> List[Path]:
@@ -167,6 +202,131 @@ class ImageCataloger:
 
         return index
 
+    def _extract_notebook_image_references(
+        self,
+        source_files: Sequence[Path],
+        repo_path: Path,
+    ) -> List[Dict[str, object]]:
+        """Extract image path references from notebook cells using text parsing."""
+        references: List[Dict[str, object]] = []
+
+        for file_path in source_files:
+            if file_path.suffix.lower() != ".ipynb":
+                continue
+
+            try:
+                payload = file_path.read_text(encoding="utf-8", errors="replace")
+                notebook = json.loads(payload)
+            except Exception as exc:
+                logger.warning("Could not parse notebook %s: %s", file_path, exc)
+                continue
+
+            cells = notebook.get("cells", [])
+            if not isinstance(cells, list):
+                continue
+
+            notebook_rel = file_path.relative_to(repo_path).as_posix()
+
+            for cell_idx, cell in enumerate(cells, start=1):
+                source_text = self._cell_source_text(cell)
+                if not source_text.strip():
+                    continue
+
+                local_seen: Set[str] = set()
+                compact_context = self._compact_text(source_text)
+                evidence_line = f"{notebook_rel}:cell {cell_idx}: {compact_context}"
+
+                for match in self.MARKDOWN_IMAGE_PATTERN.finditer(source_text):
+                    normalized_path = self._normalize_notebook_reference(match.group("path"))
+                    if not normalized_path or normalized_path in local_seen:
+                        continue
+                    local_seen.add(normalized_path)
+
+                    alt_text = (match.group("alt") or "").strip()
+                    description = (
+                        f"Notebook annotation: {alt_text}"
+                        if alt_text
+                        else self._describe_image(Path(normalized_path), source_text)
+                    )
+
+                    references.append(
+                        {
+                            "relative_path": normalized_path,
+                            "description": description,
+                            "likely_generated": self._is_likely_generated(Path(normalized_path), source_text),
+                            "evidence": [evidence_line],
+                        }
+                    )
+
+                for raw_path in self.IMAGE_NAME_PATTERN.findall(source_text):
+                    normalized_path = self._normalize_notebook_reference(raw_path)
+                    if not normalized_path or normalized_path in local_seen:
+                        continue
+                    local_seen.add(normalized_path)
+
+                    references.append(
+                        {
+                            "relative_path": normalized_path,
+                            "description": self._describe_image(Path(normalized_path), source_text),
+                            "likely_generated": self._is_likely_generated(Path(normalized_path), source_text),
+                            "evidence": [evidence_line],
+                        }
+                    )
+
+        return references
+
+    @staticmethod
+    def _cell_source_text(cell: object) -> str:
+        if not isinstance(cell, dict):
+            return ""
+        source = cell.get("source", "")
+        if isinstance(source, list):
+            return "".join(str(part) for part in source)
+        if isinstance(source, str):
+            return source
+        return ""
+
+    def _normalize_notebook_reference(self, raw_path: str) -> str:
+        """Normalize notebook path references while rejecting URLs and unsafe paths."""
+        value = str(raw_path or "").strip().strip('"').strip("'")
+        value = value.split("?")[0].split("#")[0].strip()
+        value = value.replace("\\", "/")
+
+        if not value:
+            return ""
+
+        lowered = value.lower()
+        if lowered.startswith(("http://", "https://", "data:", "file://")):
+            return ""
+        if re.match(r"^[a-zA-Z]:/", value):
+            return ""
+        if value.startswith("/"):
+            return ""
+
+        parts = [p for p in value.split("/") if p and p != "."]
+        if not parts or any(p == ".." for p in parts):
+            return ""
+
+        normalized = Path(*parts)
+        if normalized.suffix.lower() not in self.IMAGE_EXTENSIONS:
+            return ""
+
+        return normalized.as_posix()
+
+    @staticmethod
+    def _is_safe_repo_child(repo_path: Path, candidate: Path) -> bool:
+        try:
+            return str(candidate.resolve()).startswith(str(repo_path.resolve()))
+        except Exception:
+            return False
+
+    @staticmethod
+    def _compact_text(text: str, limit: int = 200) -> str:
+        compact = " ".join((text or "").split())
+        if len(compact) <= limit:
+            return compact
+        return compact[: limit - 3] + "..."
+
     @staticmethod
     def _context_window(lines: List[str], idx: int, radius: int = 1) -> str:
         start = max(0, idx - radius)
@@ -216,8 +376,8 @@ class ImageCataloger:
             return "Likely evaluation or experimental figure inferred from filename semantics."
 
         return (
-            "Repository image asset; exact semantic role is not explicit, but it may be reusable "
-            "as supporting figure material in the paper drafting phase."
+            "Repository image reference detected in code/notebook context; exact semantic role is "
+            "inferred from surrounding text and filename only."
         )
 
     @staticmethod
@@ -240,15 +400,16 @@ class ImageCataloger:
         lines = [
             "# Image Manifest",
             "",
-            "| Image | Stored Path | Likely Generated | Description |",
-            "|---|---|---|---|",
+            "| Image | Stored Path | Source | Likely Generated | Description |",
+            "|---|---|---|---|---|",
         ]
         for entry in entries:
             image = str(entry.get("relative_path", "")).replace("|", "\\|")
             stored = str(entry.get("stored_path", "")).replace("|", "\\|")
+            source = str(entry.get("source", "repository_file")).replace("|", "\\|")
             generated = "Yes" if entry.get("likely_generated") else "No"
             description = str(entry.get("description", "")).replace("|", "\\|")
-            lines.append(f"| {image} | {stored} | {generated} | {description} |")
+            lines.append(f"| {image} | {stored} | {source} | {generated} | {description} |")
 
         lines.append("")
         lines.append("## Evidence Snippets")

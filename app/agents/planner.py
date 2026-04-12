@@ -8,6 +8,7 @@ and outputs a research plan.
 import json
 import logging
 import asyncio
+import re
 from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,8 @@ class PlannerAgent:
         if callback:
             await callback("planner", "analyzing", "Analyzing research query...")
         
-        plan = await self._generate_plan(query)
+        normalized_query = self._sanitize_query(query)
+        plan = await self._generate_plan(normalized_query)
         
         if callback:
             await callback("planner", "completed", f"Research plan created with {len(plan.get('sub_questions', []))} sub-questions. Plan: {json.dumps(plan)}")
@@ -50,6 +52,7 @@ class PlannerAgent:
     
     async def _generate_plan(self, query: str) -> Dict[str, Any]:
         """Generate research plan using LLM or fallback to heuristic."""
+        query = self._sanitize_query(query)
         
         if self.llm_client:
             try:
@@ -104,6 +107,7 @@ Use this section order exactly:
                     plan["sub_questions"] = [query]
                 if "title" not in plan:
                     plan["title"] = query
+                plan["title"] = self._sanitize_title(plan.get("title", query))
                 if "sections" not in plan:
                     plan["sections"] = self._default_sections(query)
                 if "keywords" not in plan:
@@ -119,6 +123,7 @@ Use this section order exactly:
     
     def _heuristic_plan(self, query: str) -> Dict[str, Any]:
         """Generate a research plan using heuristics when LLM is unavailable."""
+        query = self._sanitize_query(query)
         keywords = self._extract_keywords(query)
         
         sub_questions = [
@@ -143,6 +148,7 @@ Use this section order exactly:
     
     def _default_sections(self, query: str) -> List[Dict[str, str]]:
         """Generate default report sections."""
+        query = self._sanitize_query(query)
         return [
             {
                 "title": "Abstract",
@@ -183,6 +189,7 @@ Use this section order exactly:
     
     def _extract_keywords(self, query: str) -> List[str]:
         """Extract keywords from query using simple heuristics."""
+        query = self._sanitize_query(query)
         # Remove common stop words
         stop_words = {
             'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been',
@@ -203,3 +210,49 @@ Use this section order exactly:
         
         # Also add the full query as a keyword phrase
         return list(set(keywords))[:8]
+
+    def _sanitize_query(self, query: str) -> str:
+        """Keep only the core research topic from mixed instruction/context prompts."""
+        text = str(query or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+        if not text:
+            return ""
+
+        text = re.sub(r"`[^`]*`", " ", text)
+
+        lines = []
+        stop_markers = (
+            "repository context summary",
+            "##analysis",
+            "analysis stats",
+            "structure preview",
+            "future scope",
+        )
+        for raw in text.split("\n"):
+            line = raw.strip()
+            if not line:
+                continue
+
+            lowered = line.lower()
+            if any(marker in lowered for marker in stop_markers):
+                break
+            if lowered.startswith("don't let ai write"):
+                continue
+            if lowered.startswith("we don't need repository context summary"):
+                continue
+            lines.append(line)
+
+        candidate = lines[0] if lines else text.split("\n", 1)[0].strip()
+        return self._sanitize_title(candidate)
+
+    @staticmethod
+    def _sanitize_title(title: str) -> str:
+        cleaned = str(title or "").strip()
+        if not cleaned:
+            return "Research Topic"
+
+        cleaned = re.sub(r"\s+", " ", cleaned)
+        cleaned = re.sub(r"^[\-:#\s]+", "", cleaned)
+        cleaned = cleaned.replace("##", "").strip()
+        if cleaned.lower().startswith("research report:"):
+            cleaned = cleaned.split(":", 1)[1].strip() or cleaned
+        return cleaned[:220]

@@ -32,6 +32,8 @@ SEMANTIC_SCHOLAR_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
 CROSSREF_URL = "https://api.crossref.org/works"
 DEFAULT_LIMIT = 30
 DEFAULT_STYLE = "IEEE"
+REFERENCE_NEAR_TARGET_MIN = 24
+MAX_QUERY_VARIANTS = 4
 
 SCHOLARLY_DOMAINS = [
     "ieeexplore.ieee.org",
@@ -56,6 +58,16 @@ STYLE_NAMES = {
     "VANCOUVER": "Vancouver",
 }
 
+QUERY_STOPWORDS = {
+    "a", "an", "and", "for", "from", "in", "of", "on", "to", "with",
+    "study", "research", "paper", "analysis", "survey", "review",
+}
+
+NOISY_SHORT_TITLE_TERMS = {
+    "call", "calls", "papers", "editorial", "preface", "contents", "issue",
+    "volume", "index", "other", "side", "news", "announcement",
+}
+
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +76,16 @@ REFERENCE_MEMORY_PATH = PROJECT_ROOT / "sessions" / "reference_memory.json"
 MEMORY_MAX_ENTRIES = 5000
 FUZZY_DUPLICATE_THRESHOLD = 0.88
 CANDIDATE_MULTIPLIER = 6
+DOI_PATTERN = re.compile(r"^10\.\d{4,9}/[-._;()/:A-Za-z0-9]+$")
+
+STYLE_TO_CSL = {
+    "IEEE": "ieee",
+    "APA": "apa",
+    "MLA": "modern-language-association",
+    "CHICAGO": "chicago-author-date",
+    "HARVARD": "harvard-cite-them-right",
+    "VANCOUVER": "vancouver",
+}
 
 
 def _canonical_url(url: str) -> str:
@@ -193,6 +215,8 @@ class ReferenceItem:
     doi: str = ""
     abstract: str = ""
     item_type: str = "journalArticle"
+    is_academic_paper: bool = False
+    verification_reason: str = ""
 
     def to_zotero_like(self) -> Dict[str, Any]:
         creators: List[Dict[str, str]] = []
@@ -222,7 +246,98 @@ class ReferenceItem:
             "publicationTitle": self.source,
             "abstractNote": self.abstract,
             "accessDate": datetime.now(UTC).strftime("%Y-%m-%d"),
+            "isAcademicPaper": self.is_academic_paper,
+            "verificationReason": self.verification_reason,
         }
+
+
+def _looks_like_doi(value: str) -> bool:
+    doi = str(value or "").strip()
+    if not doi:
+        return False
+    return bool(DOI_PATTERN.match(doi))
+
+
+def _is_plausible_year(value: str) -> bool:
+    text = str(value or "").strip()
+    if not text.isdigit():
+        return False
+    year = int(text)
+    current_year = datetime.now(UTC).year
+    return 1900 <= year <= current_year + 1
+
+
+def _infer_item_type(doi_valid: bool, scholarly_domain: bool, source: str) -> str:
+    if doi_valid or scholarly_domain:
+        source_lower = str(source or "").lower()
+        if "conference" in source_lower or "proceedings" in source_lower:
+            return "conferencePaper"
+        if "arxiv" in source_lower:
+            return "preprint"
+        return "journalArticle"
+    return "document"
+
+
+def is_verified_academic_paper(
+    paper: Dict[str, Any],
+    query_terms: Optional[set[str]] = None,
+) -> Dict[str, Any]:
+    """Heuristically verify whether a candidate resembles an academic paper."""
+    title = str(paper.get("title", "")).strip()
+    url = str(paper.get("url", "")).strip()
+    doi = str(paper.get("doi", "")).strip()
+    year = str(paper.get("year", "")).strip()
+    source = str(paper.get("source", "")).strip()
+    authors = paper.get("authors") or []
+
+    title_norm = _normalize_title(title)
+    title_token_count = len(title_norm.split())
+    title_valid = title_token_count >= 3 and not _looks_offtopic_short_title(title, query_terms or set())
+    doi_valid = _looks_like_doi(doi) or doi.lower().startswith("arxiv:")
+    scholarly_domain = _is_scholarly_url(url)
+    year_valid = _is_plausible_year(year)
+    source_valid = bool(source)
+    authors_valid = bool([a for a in authors if str(a).strip()])
+
+    score = 0
+    if title_valid:
+        score += 2
+    if doi_valid:
+        score += 2
+    if scholarly_domain:
+        score += 1
+    if year_valid:
+        score += 1
+    if source_valid:
+        score += 1
+    if authors_valid:
+        score += 1
+
+    is_academic = title_valid and score >= 4 and (doi_valid or scholarly_domain or source_valid)
+    item_type = _infer_item_type(doi_valid, scholarly_domain, source)
+
+    reasons = []
+    if title_valid:
+        reasons.append("title_ok")
+    if doi_valid:
+        reasons.append("doi_ok")
+    if scholarly_domain:
+        reasons.append("scholarly_domain")
+    if year_valid:
+        reasons.append("year_ok")
+    if source_valid:
+        reasons.append("source_ok")
+    if authors_valid:
+        reasons.append("authors_ok")
+
+    return {
+        "is_academic_paper": is_academic,
+        "item_type": item_type,
+        "doi_valid": doi_valid,
+        "scholarly_domain": scholarly_domain,
+        "score": score,
+        "reason": ",".join(reasons) if reasons else "insufficient_metadata",
+    }
 
 
 def _extract_year(text: str) -> str:
@@ -246,6 +361,26 @@ def _is_scholarly_url(url: str) -> bool:
 
 def _normalize_title(title: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]", " ", title.lower())).strip()
+
+
+def _query_terms(query: str) -> set[str]:
+    terms = set()
+    for token in re.findall(r"[a-z0-9]{3,}", str(query or "").lower()):
+        if token in QUERY_STOPWORDS:
+            continue
+        terms.add(token)
+    return terms
+
+
+def _looks_offtopic_short_title(title: str, query_terms: set[str]) -> bool:
+    tokens = [t for t in re.findall(r"[a-z0-9]{2,}", str(title or "").lower()) if t]
+    if not tokens or len(tokens) > 4:
+        return False
+    if query_terms and set(tokens) & query_terms:
+        return False
+    if len(tokens) <= 2:
+        return True
+    return bool(set(tokens) & NOISY_SHORT_TITLE_TERMS)
 
 
 def _search_ddg(query: str, limit: int) -> List[Dict[str, str]]:
@@ -350,7 +485,7 @@ def _search_crossref_query(query: str, limit: int) -> List[Dict[str, Any]]:
     try:
         response = requests.get(
             CROSSREF_URL,
-            params={"query": query, "rows": max(limit * 2, 40)},
+            params={"query": query, "rows": max(limit * 4, 60)},
             timeout=25,
         )
         response.raise_for_status()
@@ -390,6 +525,35 @@ def _search_crossref_query(query: str, limit: int) -> List[Dict[str, Any]]:
             break
 
     return rows
+
+
+def _query_variants(query: str) -> List[str]:
+    """Generate a small set of high-signal query variants for Crossref fallback."""
+    base = re.sub(r"\s+", " ", str(query or "")).strip()
+    if not base:
+        return []
+
+    tokens = [t for t in re.findall(r"[A-Za-z0-9+-]+", base) if len(t) > 2]
+    core = " ".join(tokens[:8]) if tokens else base
+
+    variants = [
+        base,
+        f"{core} survey",
+        f"{core} review",
+        f"{core} recent advances",
+    ]
+
+    deduped: List[str] = []
+    seen = set()
+    for variant in variants:
+        normalized = variant.strip().lower()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(variant.strip())
+        if len(deduped) >= MAX_QUERY_VARIANTS:
+            break
+    return deduped
 
 
 def _enrich_semantic_scholar(title: str) -> Optional[Dict[str, Any]]:
@@ -484,6 +648,22 @@ def _to_ieee_authors(authors: List[str]) -> str:
     return ", ".join(out)
 
 
+def _compact_url(url: str, max_len: int = 96) -> str:
+    raw = str(url or "").strip()
+    if not raw:
+        return ""
+    if len(raw) <= max_len:
+        return raw
+
+    parsed = urlparse(raw)
+    host = (parsed.netloc or "").strip()
+    path = (parsed.path or "").strip()
+    if host:
+        shortened_path = path[: max(12, max_len - len(host) - 18)]
+        return f"https://{host}{shortened_path}..."
+    return raw[: max_len - 3] + "..."
+
+
 def format_references(items: List[ReferenceItem], style: str) -> str:
     s = style.upper()
     lines: List[str] = []
@@ -496,19 +676,20 @@ def format_references(items: List[ReferenceItem], style: str) -> str:
             line = f"[{idx}] {ieee_authors}, \"{item.title},\" {item.source}, {item.year}."
             if item.doi:
                 line += f" doi: {item.doi}."
-            line += f" {item.url}"
+            elif item.url:
+                line += f" URL: {_compact_url(item.url)}"
         elif s == "APA":
             line = f"[{idx}] {authors} ({item.year}). {item.title}. {item.source}."
             if item.doi:
-                line += f" https://doi.org/{item.doi}"
+                line += f" doi: {item.doi}"
         elif s == "MLA":
             line = f"[{idx}] {authors}. \"{item.title}.\" {item.source}, {item.year}."
             if item.doi:
-                line += f" https://doi.org/{item.doi}"
+                line += f" doi: {item.doi}"
         elif s == "CHICAGO":
             line = f"[{idx}] {authors}. {item.year}. \"{item.title}.\" {item.source}."
             if item.doi:
-                line += f" https://doi.org/{item.doi}."
+                line += f" doi: {item.doi}."
         elif s == "HARVARD":
             line = f"[{idx}] {authors} ({item.year}) '{item.title}', {item.source}."
             if item.doi:
@@ -562,32 +743,44 @@ def generate_references(
         for entry in memory_entries
         if str(entry.get("signature", "")).strip()
     }
+    prioritize_target_count = limit >= REFERENCE_NEAR_TARGET_MIN
+    query_terms = _query_terms(query)
+
+    candidates: List[Dict[str, Any]] = []
+    candidate_keys = set()
+
+    def _append_candidate_list(rows: List[Dict[str, Any]]) -> None:
+        for row in rows:
+            title = str(row.get("title", "")).strip().lower()
+            url = str(row.get("url", "")).strip().lower()
+            key = f"{title}::{url}"
+            if not title or not url or key in candidate_keys:
+                continue
+            candidate_keys.add(key)
+            candidates.append(row)
+            if len(candidates) >= limit * CANDIDATE_MULTIPLIER:
+                return
 
     try:
-        candidates = _search_ddg(query, limit)
+        _append_candidate_list(_search_ddg(query, limit))
     except Exception as exc:
         logger.warning("Primary discovery failed for '%s': %s", query, exc)
-        candidates = []
 
-    if len(candidates) < limit:
-        existing_keys = {
-            f"{(c.get('title') or '').strip().lower()}::{(c.get('url') or '').strip().lower()}"
-            for c in candidates
-        }
-        for fallback in _search_crossref_query(query, limit):
-            key = f"{(fallback.get('title') or '').strip().lower()}::{(fallback.get('url') or '').strip().lower()}"
-            if key in existing_keys:
-                continue
-            existing_keys.add(key)
-            candidates.append(fallback)
-            if len(candidates) >= limit * CANDIDATE_MULTIPLIER:
-                break
+    search_queries = _query_variants(query) if prioritize_target_count else [query]
+    for variant in search_queries:
+        try:
+            _append_candidate_list(_search_crossref_query(variant, limit))
+        except Exception as exc:
+            logger.warning("Crossref fallback failed for '%s': %s", variant, exc)
+        if len(candidates) >= limit * CANDIDATE_MULTIPLIER:
+            break
 
     references: List[ReferenceItem] = []
     seen_titles = set()
     accepted_titles: List[str] = []
     accepted_signatures = set()
     skipped_duplicates = 0
+    filtered_non_academic = 0
 
     for cand in candidates:
         if len(references) >= limit:
@@ -601,6 +794,10 @@ def generate_references(
         if not norm_title:
             continue
 
+        if _looks_offtopic_short_title(title, query_terms):
+            skipped_duplicates += 1
+            continue
+
         if norm_title in excluded_title_norms:
             skipped_duplicates += 1
             continue
@@ -610,7 +807,7 @@ def generate_references(
         if _is_fuzzy_duplicate(norm_title, accepted_titles):
             skipped_duplicates += 1
             continue
-        if _is_fuzzy_duplicate(norm_title, memory_titles):
+        if (not prioritize_target_count) and _is_fuzzy_duplicate(norm_title, memory_titles):
             skipped_duplicates += 1
             continue
 
@@ -645,10 +842,13 @@ def generate_references(
         final_title = (meta.get("title") or title).strip()
         final_doi = (meta.get("doi") or "").strip()
         final_url = (meta.get("url") or cand.get("url") or "").strip()
+        if _looks_offtopic_short_title(final_title, query_terms):
+            skipped_duplicates += 1
+            continue
         final_norm_title = _normalize_title(final_title) or norm_title
         final_signature = _reference_signature(final_title, final_doi, final_url)
 
-        if final_signature in accepted_signatures or final_signature in memory_signatures:
+        if final_signature in accepted_signatures or ((not prioritize_target_count) and final_signature in memory_signatures):
             skipped_duplicates += 1
             continue
         if final_norm_title in seen_titles or final_norm_title in excluded_title_norms:
@@ -657,8 +857,23 @@ def generate_references(
         if _is_fuzzy_duplicate(final_norm_title, accepted_titles):
             skipped_duplicates += 1
             continue
-        if _is_fuzzy_duplicate(final_norm_title, memory_titles):
+        if (not prioritize_target_count) and _is_fuzzy_duplicate(final_norm_title, memory_titles):
             skipped_duplicates += 1
+            continue
+
+        verification = is_verified_academic_paper(
+            {
+                "title": final_title,
+                "url": final_url,
+                "doi": final_doi,
+                "year": str(meta.get("year") or _extract_year(cand.get("snippet", ""))),
+                "source": str(meta.get("source") or "").strip(),
+                "authors": meta.get("authors") or [],
+            },
+            query_terms=query_terms,
+        )
+        if not verification["is_academic_paper"]:
+            filtered_non_academic += 1
             continue
 
         authors = [a for a in (meta.get("authors") or []) if a and a.lower() != "unknown"]
@@ -676,6 +891,9 @@ def generate_references(
                 year=str(meta.get("year") or _extract_year(cand.get("snippet", ""))),
                 doi=final_doi,
                 abstract=(meta.get("abstract") or cand.get("snippet") or "").strip(),
+                item_type=verification["item_type"],
+                is_academic_paper=True,
+                verification_reason=verification["reason"],
             )
         )
 
@@ -704,6 +922,14 @@ def generate_references(
     _save_reference_memory(deduped_memory)
 
     pyz = pyzotero_capabilities()
+    requested_csl = STYLE_TO_CSL.get(style.upper(), style.lower())
+    available_formats = {str(f).strip().lower() for f in pyz.get("formats", [])}
+    pyz["requested_style"] = requested_csl
+    pyz["requested_style_supported"] = requested_csl in available_formats if pyz.get("available") else False
+    pyz["verification_note"] = (
+        "Reference entries are filtered to academic-paper candidates using DOI/domain/metadata checks; "
+        "pyzotero availability is also checked for CSL style compatibility."
+    )
 
     return {
         "query": query,
@@ -717,6 +943,7 @@ def generate_references(
         "generated_at": now_iso,
         "dedup_stats": {
             "skipped_duplicates": skipped_duplicates,
+            "filtered_non_academic": filtered_non_academic,
             "memory_entries": len(deduped_memory),
             "excluded_titles": len(excluded_title_norms),
         },

@@ -109,3 +109,50 @@ def test_excluded_titles_filter_matches_case_insensitive(monkeypatch, tmp_path: 
     titles = [paper["title"] for paper in result["papers"]]
     assert "Federated Learning for MRI Analysis" not in titles
     assert "Interpretable Diagnostics with LLMs" in titles
+
+
+def test_high_limit_prefers_target_count_over_memory_novelty(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(refmod, "REFERENCE_MEMORY_PATH", tmp_path / "reference_memory.json")
+    monkeypatch.setattr(
+        refmod,
+        "_search_ddg",
+        lambda query, limit: [
+            {"title": "Reliable Ocean Monitoring with AI", "url": "https://example.org/ocean-ai", "snippet": "2024"},
+        ],
+    )
+    monkeypatch.setattr(refmod, "_search_crossref_query", lambda query, limit: [])
+    monkeypatch.setattr(refmod, "_enrich_semantic_scholar", _fake_semantic)
+    monkeypatch.setattr(refmod, "_enrich_crossref", lambda title: None)
+
+    first = refmod.generate_references("ocean ai", limit=5, style="IEEE")
+    second = refmod.generate_references("ocean ai", limit=30, style="IEEE")
+
+    assert first["count"] == 1
+    assert second["count"] == 1
+
+
+def test_high_limit_uses_crossref_query_variants(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(refmod, "REFERENCE_MEMORY_PATH", tmp_path / "reference_memory.json")
+    monkeypatch.setattr(refmod, "_search_ddg", lambda query, limit: [])
+    monkeypatch.setattr(refmod, "_enrich_semantic_scholar", _fake_semantic)
+    monkeypatch.setattr(refmod, "_enrich_crossref", lambda title: None)
+
+    calls = {"count": 0}
+
+    def _crossref_variants(query, limit):
+        calls["count"] += 1
+        slug = _slug(query)
+        return [
+            {
+                "title": f"{query.title()} Study",
+                "url": f"https://example.org/{slug}",
+                "snippet": "2024",
+            }
+        ]
+
+    monkeypatch.setattr(refmod, "_search_crossref_query", _crossref_variants)
+
+    result = refmod.generate_references("marine ai surveillance", limit=30, style="IEEE")
+
+    assert calls["count"] >= 2
+    assert result["count"] >= 2

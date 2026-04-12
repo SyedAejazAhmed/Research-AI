@@ -43,7 +43,8 @@ def test_format_references_ieee_text():
     assert "[1]" in text
     assert '"A Survey on Federated Learning,"' in text
     assert "doi: 10.1000/test.1" in text
-    assert "https://example.org/paper1" in text
+    assert "URL: https://example.org/paper2" in text
+    assert "https://example.org/paper1" not in text
 
 
 def test_format_references_harvard_text():

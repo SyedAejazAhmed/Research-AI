@@ -51,7 +51,7 @@ const STATUS_PROGRESS = {
 function statusColour(s) {
   if (s === 'completed') return 'text-emerald-400';
   if (s === 'error')     return 'text-red-400';
-  return 'text-violet-400';
+  return 'text-emerald-300';
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -84,6 +84,7 @@ export default function ResearchWorkspace({
   // Left panel tab: 'sections' | 'pipeline' | 'chat'
   const [sideMode, setSideMode] = useState('sections');
   const [referenceStyle, setReferenceStyle] = useState('IEEE');
+  const [paperTemplate, setPaperTemplate] = useState('ieee');
   const [referencesLoading, setReferencesLoading] = useState(false);
   const [referencesError, setReferencesError] = useState('');
   const lastReferencesKeyRef = useRef('');
@@ -187,8 +188,8 @@ export default function ResearchWorkspace({
       <div className="flex items-center gap-4 px-5 py-2.5 border-b border-gray-800 shrink-0 bg-gray-950/90 backdrop-blur-xl z-10">
         {/* Logo */}
         <div className="flex items-center gap-2 cursor-pointer select-none" onClick={onNewResearch}>
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center font-black text-sm text-white shadow-lg">Y</div>
-          <GradientText colors={["#6366f1","#a855f7","#22d3ee","#6366f1"]} animationSpeed={8} className="font-outfit font-black text-lg tracking-tighter hidden sm:block">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-500 flex items-center justify-center font-black text-sm text-white shadow-lg">Y</div>
+          <GradientText colors={["#10b981","#34d399","#14b8a6","#10b981"]} animationSpeed={8} className="font-outfit font-black text-lg tracking-tighter hidden sm:block">
             YUKTI.AI
           </GradientText>
         </div>
@@ -204,14 +205,14 @@ export default function ResearchWorkspace({
         {/* Progress bar */}
         <div className="w-40 hidden md:block">
           <div className="flex items-center gap-2 mb-0.5">
-            <div className={`w-1.5 h-1.5 rounded-full ${status === 'completed' ? 'bg-emerald-500' : 'bg-violet-500 animate-ping'}`} />
+            <div className={`w-1.5 h-1.5 rounded-full ${status === 'completed' ? 'bg-emerald-500' : 'bg-emerald-400 animate-ping'}`} />
             <span className={`text-[9px] font-black uppercase tracking-widest ${statusColour(status)}`}>{status}</span>
           </div>
           <div className="h-1 bg-gray-800 rounded-full overflow-hidden">
             <motion.div
               animate={{ width: `${progress}%` }}
               transition={{ duration: 0.7 }}
-              className="h-full bg-gradient-to-r from-violet-500 to-emerald-400 rounded-full"
+              className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full"
             />
           </div>
         </div>
@@ -237,6 +238,17 @@ export default function ResearchWorkspace({
 
         {/* Actions */}
         <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-gray-900 border border-gray-700">
+            <span className="text-[9px] font-black uppercase tracking-widest text-gray-500">Paper Format</span>
+            <select
+              value={paperTemplate}
+              onChange={(e) => setPaperTemplate(e.target.value)}
+              className="bg-gray-800 border border-gray-700 text-gray-200 text-[11px] px-2 py-1 rounded outline-none"
+              aria-label="Select paper format"
+            >
+              <option value="ieee">IEEE</option>
+            </select>
+          </div>
           {report && (
             <a href={`/api/export/${sessionId}/pdf?download=1`} download
               className="p-2 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white transition-all border border-gray-700">
@@ -313,7 +325,7 @@ export default function ResearchWorkspace({
                   <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                     <div className={`text-xs px-3 py-2 rounded-2xl max-w-[90%] leading-relaxed ${
                       m.role === 'user'
-                        ? 'bg-violet-600 text-white rounded-br-sm'
+                        ? 'bg-emerald-600 text-white rounded-br-sm'
                         : 'bg-gray-800 text-gray-300 rounded-bl-sm'
                     }`}>
                       {m.content}
@@ -323,8 +335,8 @@ export default function ResearchWorkspace({
               </div>
               <div className="p-3 border-t border-gray-800">
                 <form onSubmit={e => { e.preventDefault(); const v = e.target.msg.value.trim(); if(v){sendMessage(v);e.target.reset();} }} className="flex gap-2">
-                  <input name="msg" placeholder="Ask Yukti…" className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-violet-500/50 transition-colors" />
-                  <button type="submit" className="p-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white transition-colors"><ChevronRight size={14} /></button>
+                  <input name="msg" placeholder="Ask Yukti…" className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-200 placeholder:text-gray-600 focus:outline-none focus:border-emerald-500/50 transition-colors" />
+                  <button type="submit" className="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"><ChevronRight size={14} /></button>
                 </form>
               </div>
             </motion.div>
@@ -365,11 +377,10 @@ export default function ResearchWorkspace({
         <IEEEPreview
           sections={sections}
           editValues={editValues}
-          activeKey={activeKey}
           plan={plan}
-          query={query}
-          approvedKeys={approvedKeys}
           sessionId={sessionId}
+          paperTemplate={paperTemplate}
+          onPaperTemplateChange={setPaperTemplate}
         />
       </div>
     </div>
